@@ -1,0 +1,33 @@
+import { test, expect } from "vitest";
+
+// ─── A tiny arithmetic parser ──────────────────────────────────────────────
+
+type Expr =
+  | { kind: "num"; value: number }
+  | { kind: "neg"; expr: Expr }
+  | { kind: "bin"; op: "+" | "-" | "*" | "/"; left: Expr; right: Expr };
+
+function evaluate(e: Expr): number {
+  switch (e.kind) {
+    case "num":
+      return e.value;
+    case "neg":
+      return -evaluate(e.expr);
+    case "bin": {
+      const l = evaluate(e.left);
+      const r = evaluate(e.right);
+      if (e.op === "/" && r === 0) throw new RangeError("division by zero");
+      return e.op === "+"
+        ? l + r
+        : e.op === "-"
+          ? l - r
+          : e.op === "*"
+            ? l * r
+            : l / r;
+    }
+  }
+}
+
+test("Tests > evaluate > Cases[0]", async () => {
+  expect(await evaluate({ kind: "num", value: -1 })).toEqual(-1);
+});

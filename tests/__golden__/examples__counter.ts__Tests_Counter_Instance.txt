@@ -1,0 +1,36 @@
+import { test, expect } from "vitest";
+
+class Counter {
+  #count: number;
+  readonly step: number;
+  readonly history: number[] = [];
+
+  constructor(initial = 0, step = 1) {
+    if (!Number.isInteger(initial))
+      throw new RangeError("initial must be an integer");
+    this.#count = initial;
+    this.step = step;
+  }
+
+  get count(): number {
+    return this.#count;
+  }
+
+  increment(times = 1): this {
+    for (let i = 0; i < times; i++) {
+      this.#count += this.step;
+      this.history.push(this.#count);
+    }
+    return this;
+  }
+
+  reset(): void {
+    this.#count = 0;
+    this.history.length = 0;
+  }
+}
+
+test("Tests > Counter > Instance", async () => {
+  const Counter$ = new Counter(10, 2);
+  expect(Counter$).toBeInstanceOf(Counter);
+});

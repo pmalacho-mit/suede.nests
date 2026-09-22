@@ -1,8 +1,9 @@
-// The state every piece of the printer shares: the checker, the file being
-// printed, the warnings collected so far, the imports to inject, and the
-// per-test state. Passed explicitly as `cx` so each piece can be built — and
-// tested — on its own.
+// The state the model shares while lowering one file: the checker, the file,
+// the warnings so far, and the state of the test being lowered. Passed
+// explicitly as `cx` so each stage can be built — and tested — on its own.
 import ts from "typescript";
+
+import type { Binding, Expr } from "./ir.mts";
 
 /**
  * The DSL entry; type references whose declaration lives here are DSL intrinsics.
@@ -15,6 +16,9 @@ import ts from "typescript";
  */
 export const DSL_FILE = /dsl\.import\.meta\.vitest\.ts$/;
 
+/** Where generated code imports `ntCheck` from, unless the plugin says otherwise. */
+export const RUNTIME_MODULE = "@namespace-tests/vite-plugin/runtime";
+
 /** An authoring problem found while printing. Positions are 0-based. */
 export type Warning = {
   line: number;
@@ -23,220 +27,126 @@ export type Warning = {
   message: string;
 };
 
-export type Imports = Map<string, Set<string>>;
-
 /** One generated line and the 0-based original line it maps to (or null). */
 export type Line = { code: string; line: number | null };
 
-/** A user type alias referenced by the current test, printed as a `const` (or an async arrow when generic). */
-export type Alias = {
-  name: string;
-  generic: boolean;
-  code: string;
-  line: number;
-};
+export type EmitInput = { program: ts.Program; source: ts.SourceFile };
 
-/** Per-test state: which aliases the test references, in dependency order. */
+/** State of the test being lowered: the aliases it references, in dependency order. */
 export type TestState = {
-  aliases: Map<ts.Symbol, Alias>;
-  order: Alias[];
-  usesTask: boolean;
+  bindings: Map<ts.Symbol, Binding>;
+  order: Binding[];
+  /** module specifier → value imports to inject (`a as a$`, `default as d$`, `* as ns$`) */
+  imports: Map<string, Set<string>>;
 };
 
-export const freshTestState = (): TestState => ({
-  aliases: new Map(),
+const freshTestState = (): TestState => ({
+  bindings: new Map(),
   order: [],
-  usesTask: false,
+  imports: new Map(),
 });
 
-/** The 0-based line a node starts on. */
-const lineOf = (source: ts.SourceFile, node: ts.Node) =>
-  source.getLineAndCharacterOfPosition(node.getStart()).line;
-
-/** A generated statement anchored to the node it came from. */
-const attachLineToCode = (
-  source: ts.SourceFile,
-  code: string,
-  node: ts.Node | null,
-) => ({
-  code,
-  line: node ? lineOf(source, node) : null,
-});
-
-const quote = (str: string) => JSON.stringify(str);
-
-const propKey = (name: string) =>
-  /^[A-Za-z_$][\w$]*$/.test(name) ? name : quote(name);
-
-const getNameIfNodeIsDSLType = (
-  checker: ts.TypeChecker,
-  node: ts.TypeReferenceNode,
-) => {
-  const symbol = checker.getSymbolAtLocation(node.typeName);
-  const target =
-    symbol && symbol.flags & ts.SymbolFlags.Alias
-      ? checker.getAliasedSymbol(symbol)
-      : symbol;
-  const declaration = target?.declarations?.[0];
-  return target &&
-    declaration &&
-    DSL_FILE.test(declaration.getSourceFile().fileName)
-    ? target.getName()
-    : null;
-};
-
-const unsupported = (
-  source: ts.SourceFile,
-  warnings: Warning[],
-  node: ts.Node,
-  why = "is a type, not a value",
-) => {
-  const { line, character } = source.getLineAndCharacterOfPosition(
-    node.getStart(),
-  );
-  warnings?.push({
-    line,
-    column: character,
-    length: node.getWidth(),
-    message: `\`${node.getText()}\` ${why}`,
-  });
-  return `nt_unsupported(${quote(node.getText())})`;
-};
-
-/**
- * An identifier used as a value. If it comes from a *type-only* import, the
- * binding does not exist at runtime, so inject a value import under an
- * aliased name and return that name. Otherwise return the identifier as-is.
- */
-const tryImportIdentifierAsValue = (
-  checker: ts.TypeChecker,
-  source: ts.SourceFile,
-  imports: Imports,
-  warnings: Warning[],
-  identifier: ts.Identifier,
-) => {
-  const symbol = checker.getSymbolAtLocation(identifier);
-
-  if (!symbol || !(symbol.flags & ts.SymbolFlags.Alias)) return identifier.text;
-
-  const declaration = symbol.declarations?.[0];
-  const _import =
-    declaration && ts.findAncestor(declaration, ts.isImportDeclaration);
-
-  if (!declaration || !_import || !ts.isStringLiteral(_import.moduleSpecifier))
-    return identifier.text;
-
-  const typeOnly =
-    _import.importClause?.phaseModifier === ts.SyntaxKind.TypeKeyword ||
-    (ts.isImportSpecifier(declaration) && declaration.isTypeOnly);
-
-  if (!typeOnly) return identifier.text;
-
-  const local = `${identifier.text}$`;
-  const set = imports.get(_import.moduleSpecifier.text) ?? new Set<string>();
-  if (ts.isImportSpecifier(declaration))
-    set.add(
-      `${(declaration.propertyName ?? declaration.name).text} as ${local}`,
-    );
-  else if (ts.isImportClause(declaration)) set.add(`default as ${local}`);
-  else if (ts.isNamespaceImport(declaration)) set.add(`* as ${local}`);
-  else
-    return unsupported(
-      source,
-      warnings,
-      identifier,
-      "cannot be re-imported as a value",
-    );
-  imports.set(_import.moduleSpecifier.text, set);
-  return local;
-};
-
-/** Where generated code imports `ntTest` and `ntCheck` from. */
-export const RUNTIME_MODULE = "@namespace-tests/vite-plugin/runtime";
+export type EmitContext = ReturnType<typeof createEmitContext>;
 
 export const createEmitContext = (
   program: ts.Program,
   source: ts.SourceFile,
+  runtime = RUNTIME_MODULE,
 ) => {
   const checker = program.getTypeChecker();
-  const quote = (s: string) => JSON.stringify(s);
-  const warnings = new Array<Warning>();
-  const imports: Imports = new Map();
+  const warnings: Warning[] = [];
+  /** A node is asked about several times over — is it a test? which DSL type? — so the answer is kept. */
+  const targets = new WeakMap<ts.Node, ts.Symbol | undefined>();
 
-  return {
+  const cx = {
     program,
-    /** Where generated code imports the runtime helpers from. */
-    runtime: RUNTIME_MODULE,
     checker,
     source,
     warnings,
-    /** module specifier → import bindings to inject (`"a as a$"`, `"default as d$"`, `"* as ns$"`) */
-    imports,
-    /** Runtime helpers the generated header must import or declare. */
-    used: { fs: false, env: false, task: false },
-    /** State of the test currently being printed; replaced by `resetTest()`. */
-    state: freshTestState(),
-    /** Start a fresh test: no aliases, no task parameter. */
+    /** Where generated code imports the runtime helpers from. */
+    runtime,
+    /** State of the test currently being lowered; replaced by `resetTest()`. */
+    test: freshTestState(),
     resetTest() {
-      this.state = freshTestState();
-      return this.state;
+      cx.test = freshTestState();
+      return cx.test;
     },
-    quote,
-    propKey,
     /** The 0-based line a node starts on. */
-    lineOf: lineOf.bind(null, source),
-    /** A generated statement anchored to the node it came from. */
-    statement: attachLineToCode.bind(null, source),
-    /** Is this type reference to one of our DSL types? Returns its name or null. */
-    dslName: getNameIfNodeIsDSLType.bind(null, checker),
-    /** Record an authoring problem and print a call that fails at run time. */
-    unsupported: unsupported.bind(null, source, warnings),
+    lineOf: (node: ts.Node) =>
+      source.getLineAndCharacterOfPosition(node.getStart()).line,
+    /** The symbol a name refers to, through any import alias. */
+    target(name: ts.Node): ts.Symbol | undefined {
+      if (targets.has(name)) return targets.get(name);
+      const symbol = checker.getSymbolAtLocation(name);
+      const target =
+        symbol && symbol.flags & ts.SymbolFlags.Alias
+          ? checker.getAliasedSymbol(symbol)
+          : symbol;
+      targets.set(name, target);
+      return target;
+    },
+    /** Is this a reference to one of the DSL's types? Its name, or null. */
+    dslName(node: ts.TypeReferenceNode): string | null {
+      const target = cx.target(node.typeName);
+      const declaration = target?.declarations?.[0];
+      return target &&
+        declaration &&
+        DSL_FILE.test(declaration.getSourceFile().fileName)
+        ? target.getName()
+        : null;
+    },
+    /** Record an authoring problem, and stand in a call that fails at run time. */
+    unsupported(node: ts.Node, why = "is a type, not a value"): Expr {
+      const { line, character } = source.getLineAndCharacterOfPosition(
+        node.getStart(),
+      );
+      warnings.push({
+        line,
+        column: character,
+        length: node.getWidth(),
+        message: `\`${node.getText()}\` ${why}`,
+      });
+      return { kind: "unsupported", source: node.getText() };
+    },
     /**
      * An identifier used as a value. If it comes from a *type-only* import, the
      * binding does not exist at runtime, so inject a value import under an
      * aliased name and return that name. Otherwise return the identifier as-is.
      */
-    valueName: tryImportIdentifierAsValue.bind(
-      null,
-      checker,
-      source,
-      imports,
-      warnings,
-    ),
+    valueName(identifier: ts.Identifier): string | Expr {
+      const symbol = checker.getSymbolAtLocation(identifier);
+      if (!symbol || !(symbol.flags & ts.SymbolFlags.Alias))
+        return identifier.text;
+      const declaration = symbol.declarations?.[0];
+      const importDecl =
+        declaration && ts.findAncestor(declaration, ts.isImportDeclaration);
+      if (
+        !declaration ||
+        !importDecl ||
+        !ts.isStringLiteral(importDecl.moduleSpecifier)
+      )
+        return identifier.text;
+      const typeOnly =
+        importDecl.importClause?.phaseModifier === ts.SyntaxKind.TypeKeyword ||
+        (ts.isImportSpecifier(declaration) && declaration.isTypeOnly);
+      if (!typeOnly) return identifier.text;
+
+      const local = `${identifier.text}$`;
+      const binding = ts.isImportSpecifier(declaration)
+        ? `${(declaration.propertyName ?? declaration.name).text} as ${local}`
+        : ts.isImportClause(declaration)
+          ? `default as ${local}`
+          : ts.isNamespaceImport(declaration)
+            ? `* as ${local}`
+            : null;
+      if (!binding)
+        return cx.unsupported(identifier, "cannot be re-imported as a value");
+      const spec = importDecl.moduleSpecifier.text;
+      const set = cx.test.imports.get(spec) ?? new Set<string>();
+      set.add(binding);
+      cx.test.imports.set(spec, set);
+      return local;
+    },
   };
+  return cx;
 };
-
-export type EmitContext = ReturnType<typeof createEmitContext>;
-
-export type EmitInput = {
-  program: ts.Program;
-  source: ts.SourceFile;
-};
-
-export type EmitInputOrContext = EmitInput | EmitContext;
-
-export function ensureEmitContext(
-  input: EmitInput | EmitContext,
-): asserts input is EmitContext {
-  const discriminator: Exclude<keyof EmitContext, keyof EmitInput> = "checker";
-  if (discriminator in input) return;
-  Object.assign(input, createEmitContext(input.program, input.source));
-}
-
-export const asEmitContext = (input: EmitInput | EmitContext) => {
-  ensureEmitContext(input);
-  return input;
-};
-
-/**
- * Narrow "an emit input (or context) — or something else entirely" to the
- * former. `key` must be a key the emit input has and the alternative does not,
- * which the type of `key` enforces at compile time.
- */
-export const isInputOrContext = <T,>(
-  inputOrContextOrOther: T | EmitInputOrContext,
-  key: Exclude<keyof EmitInputOrContext, keyof Exclude<T, EmitInputOrContext>>,
-): inputOrContextOrOther is EmitInputOrContext =>
-  !!inputOrContextOrOther &&
-  typeof inputOrContextOrOther === "object" &&
-  key in inputOrContextOrOther;

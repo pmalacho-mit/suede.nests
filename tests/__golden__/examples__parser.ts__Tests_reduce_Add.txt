@@ -1,0 +1,48 @@
+import { test, expect } from "vitest";
+
+// ─── A reducer ─────────────────────────────────────────────────────────────
+
+interface Todo {
+  id: bigint;
+  text: string;
+  done: boolean;
+  due: string | null;
+}
+interface State {
+  todos: Todo[];
+  filter: "all" | "open" | "done";
+}
+type Action =
+  | { type: "add"; id: bigint; text: string }
+  | { type: "toggle"; id: bigint }
+  | { type: "filter"; filter: State["filter"] };
+
+function reduce(state: State, action: Action): State {
+  switch (action.type) {
+    case "add":
+      return {
+        ...state,
+        todos: [
+          ...state.todos,
+          { id: action.id, text: action.text, done: false, due: null },
+        ],
+      };
+    case "toggle":
+      return {
+        ...state,
+        todos: state.todos.map((t) =>
+          t.id === action.id ? { ...t, done: !t.done } : t,
+        ),
+      };
+    case "filter":
+      return { ...state, filter: action.filter };
+  }
+}
+
+test("Tests > reduce > Add", async () => {
+  const Empty: State = { todos: [], filter: "all" };
+  const One = await reduce(Empty, { type: "add", id: 1n, text: "buy milk" });
+  expect.soft(One.todos).toEqual([{ id: 1n, text: "buy milk", done: false, due: null }]);
+  expect.soft(One.todos[0]!.due).toEqual(null);
+  expect.soft(One.todos[0]!.id).toEqual(1n);
+});

@@ -1,0 +1,77 @@
+import { test, expect } from "vitest";
+
+// ─── A tiny arithmetic parser ──────────────────────────────────────────────
+
+type Expr =
+  | { kind: "num"; value: number }
+  | { kind: "neg"; expr: Expr }
+  | { kind: "bin"; op: "+" | "-" | "*" | "/"; left: Expr; right: Expr };
+
+class ParseError extends SyntaxError {
+  readonly position: number;
+  constructor(message: string, position: number) {
+    super(message);
+    this.name = "ParseError";
+    this.position = position;
+  }
+}
+
+function parse(src: string): Expr {
+  let i = 0;
+  const peek = () => src[i] ?? "";
+  const skip = () => {
+    while (/\s/.test(peek())) i++;
+  };
+  const expr = (): Expr => {
+    let left = term();
+    skip();
+    while (peek() === "+" || peek() === "-") {
+      const op = src[i++] as "+" | "-";
+      left = { kind: "bin", op, left, right: term() };
+      skip();
+    }
+    return left;
+  };
+  const term = (): Expr => {
+    let left = factor();
+    skip();
+    while (peek() === "*" || peek() === "/") {
+      const op = src[i++] as "*" | "/";
+      left = { kind: "bin", op, left, right: factor() };
+      skip();
+    }
+    return left;
+  };
+  const factor = (): Expr => {
+    skip();
+    if (peek() === "-") {
+      i++;
+      return { kind: "neg", expr: factor() };
+    }
+    if (peek() === "(") {
+      i++;
+      const e = expr();
+      skip();
+      if (peek() !== ")") throw new ParseError("expected )", i);
+      i++;
+      return e;
+    }
+    const m = /^\d+(\.\d+)?/.exec(src.slice(i));
+    if (!m)
+      throw new ParseError(
+        `unexpected ${JSON.stringify(peek() || "end of input")}`,
+        i,
+      );
+    i += m[0].length;
+    return { kind: "num", value: Number(m[0]) };
+  };
+  const result = expr();
+  skip();
+  if (i < src.length) throw new ParseError(`trailing input`, i);
+  return result;
+}
+
+/** `matches` lets you check just the shape you care about. */
+test("Tests > parse > Parens", async () => {
+  expect(await parse("(1 + 2) * 3")).toMatchObject({ kind: "bin", op: "*" });
+});

@@ -1,0 +1,17 @@
+import { test, expect } from "vitest";
+
+/** Turn arbitrary text into a URL-safe slug. */
+function slugify(input: string, maxLength = 64): string {
+  return input
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, maxLength);
+}
+
+/** Punctuation collapses into single dashes. */
+test("Tests > slugify > Basic", async () => {
+  expect(await slugify("Hello, World!")).toEqual("hello-world");
+});

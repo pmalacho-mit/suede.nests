@@ -1,0 +1,20 @@
+import { test, expect } from "vitest";
+
+function histogram(
+  xs: readonly number[],
+  buckets: number,
+  min: number,
+  max: number,
+): Uint32Array {
+  const out = new Uint32Array(buckets);
+  const width = (max - min) / buckets;
+  for (const x of xs) {
+    const b = Math.min(buckets - 1, Math.max(0, Math.floor((x - min) / width)));
+    out[b] = (out[b] ?? 0) + 1;
+  }
+  return out;
+}
+
+test("Tests > histogram > Clamps", async () => {
+  expect(Array.from(await histogram([-100, 100], 2, 0, 10))).toEqual([1, 1]);
+});

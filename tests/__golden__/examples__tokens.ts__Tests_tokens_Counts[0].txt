@@ -1,0 +1,14 @@
+import { test, expect } from "vitest";
+
+import ts from "typescript";
+
+/** Top-level statements in a snippet of TypeScript. */
+function statementCount(source: string): number {
+  return ts.createSourceFile("snippet.ts", source, ts.ScriptTarget.ES2022, true)
+    .statements.length;
+}
+
+/** a package import is shared, not copied, so this is the real TypeScript */
+test("Tests > tokens > Counts[0]", async () => {
+  expect(await statementCount("const a = 1;")).toEqual(1);
+});

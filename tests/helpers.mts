@@ -1,10 +1,7 @@
 import ts from "typescript";
 import path from "node:path";
 import fs from "node:fs";
-import {
-  createEmitContext,
-  emitTests,
-} from "../release/vite-plugin/emit/index.mts";
+import { createEmitContext, emitTests } from "../release/vite-plugin/emit/index.mts";
 import plugin from "../release/vite-plugin/plugin.mts";
 
 import type { Emitted } from "../release/vite-plugin/emit/index.mts";

@@ -1,0 +1,16 @@
+import { test, expect } from "vitest";
+import { readFileSync } from "node:fs";
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  roles: string[];
+  createdAt: string;
+}
+
+test("Tests > UserRepository > SeedShape", async () => {
+  const Seed = JSON.parse(readFileSync(new URL("./fixtures/users.json", import.meta.url), "utf8"));
+  expect.soft(Seed.length).toBeGreaterThan(0);
+  expect.soft(Seed[0]!.email).toContain("@");
+});

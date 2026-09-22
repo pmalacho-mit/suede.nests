@@ -1,13 +1,12 @@
-// Vite plugin: appends generated Vitest code to any module containing a
-// `declare namespace Tests` block. Only loaded by Vitest; production builds
-// never see it.
+// Vite plugin: appends generated Vitest code to any module whose
+// `declare namespace` blocks hold tests. Only loaded by Vitest; production
+// builds never see it.
 import ts from "typescript";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import picomatch from "picomatch";
-import { emitTests } from "./emit/index.mts";
-import { minimalFor } from "./minimal.mts";
+import { emittedFor, minimalFor } from "./minimal.mts";
 import { encodeMappings } from "./sourcemap.mts";
 
 import type { Plugin, ViteUserConfig } from "vitest/config";
@@ -126,7 +125,7 @@ export function testNameFilter(pattern: unknown): RegExp | null {
   }
 }
 
-declare namespace Tests.testNameFilter {
+declare namespace testNameFilter {
   /** the string `-t` hands over becomes the pattern Vitest matches with */
   export type FromString = Expect<
     Invoke<typeof testNameFilter, [pattern: "Counter"]>,
@@ -496,7 +495,7 @@ export default function namespaceTests({
       const program = service.getProgram();
       const sf = program?.getSourceFile(id);
       if (!program || !sf) return null;
-      const emitted = emitTests({ program, source: sf }, root, runtimeFor(id));
+      const emitted = emittedFor({ program, source: sf }, root, runtimeFor(id));
       const { warnings, tests } = emitted;
       const rel = path.relative(cwd, id);
       diagnostics[rel] = warnings;

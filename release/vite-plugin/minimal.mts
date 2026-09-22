@@ -1,32 +1,36 @@
 #!/usr/bin/env node
-// Minimal reproduction file for one test — the thing the results webview shows so
-// a user can tweak a test locally.
+// One test as a standalone file — the thing the plugin serves from memory and
+// the editor extracts to disk, so a user can run, debug and tweak it locally.
 //
 //   nt-minimal examples/counter.ts Reset
 //
-// 1. Take the module source, strip `export` keywords (so exports become prunable)
-//    and drop the `declare namespace Tests` blocks.
-// 2. Append the one generated test as a top-level script.
-// 3. Ask TypeScript's own "delete all unused declarations" code fix
-//    (fixId `unusedIdentifier_delete`, what the editor runs) to prune, until
-//    nothing unused remains.
+// 1. Print the file's tests, and pick the one (or the table rows) asked for.
+// 2. Keep only the top-level statements that test reaches, without their
+//    `export` keywords, and drop the `declare namespace` blocks.
+// 3. Put the preamble that test needs in front, and the test after.
 import ts from "typescript";
 import path from "node:path";
 import fs from "node:fs";
 import { cacheKey, read, write } from "./cache.mts";
-import { emitTests } from "./emit/index.mts";
-import { namespaces } from "./emit/suite.mts";
+import {
+  allNeeds,
+  emitTests,
+  headerLines,
+  namespaces,
+  RUNTIME_MODULE,
+} from "./emit/index.mts";
 
-import type { EmitInput } from "./emit/context.mts";
+import type { Emitted, EmitInput } from "./emit/index.mts";
 
-import type { Expect, Invoke, Table, Throws } from "../dsl.import.meta.vitest.ts";
+import type {
+  Expect,
+  Invoke,
+  Table,
+  Throws,
+} from "../dsl.import.meta.vitest.ts";
 import type { minimalForFixture } from "../_internal/harness.mts";
-/**
- * @param file Test file, relative to cwd.
- * @param testName Name of the exported test alias.
- * @returns The minimal TypeScript source.
- */
-/** Parsed tsconfigs and parsed lib files, reused across calls. */
+
+/** Parsed tsconfigs, reused across calls. */
 const configs = new Map<string, ts.ParsedCommandLine>();
 
 // One program for every file we are asked about, grown as needed. Keeping a
@@ -43,7 +47,7 @@ function programFor(abs: string, parsed: ts.ParsedCommandLine): ts.Program {
 }
 
 /** The tsconfig as TypeScript reads it, parsed once per config path. */
-function configFor(tsconfig: string): { parsed: ts.ParsedCommandLine } {
+function configFor(tsconfig: string): ts.ParsedCommandLine {
   const cfgPath = ts.findConfigFile(".", ts.sys.fileExists, tsconfig);
   if (!cfgPath) throw new Error(`cannot find ${tsconfig}`);
   let parsed = configs.get(cfgPath);
@@ -55,16 +59,30 @@ function configFor(tsconfig: string): { parsed: ts.ParsedCommandLine } {
     );
     configs.set(cfgPath, parsed);
   }
-  return { parsed };
+  return parsed;
 }
 
-
 /**
- * Printing a file yields every test in it, so it is done once per file rather
- * than once per test: twenty tests in a module used to mean twenty passes of
- * the printer over the same source.
+ * Printing a file yields every test in it, so it is done once per source file
+ * rather than once per test — and the plugin, which prints a file as Vite
+ * transforms it, goes through here too, so serving that file's tests prints
+ * nothing again. The compiler hands out a new `SourceFile` when a file's text
+ * changes, so keying on the object is keying on the text.
  */
-const printed = new Map<string, ReturnType<typeof emitTests>>();
+const printed = new WeakMap<ts.SourceFile, Map<string, Emitted>>();
+
+export function emittedFor(
+  input: EmitInput,
+  root?: string,
+  runtime?: string,
+): Emitted {
+  const key = `${root ?? ""}\0${runtime ?? ""}`;
+  const byOptions = printed.get(input.source) ?? new Map<string, Emitted>();
+  printed.set(input.source, byOptions);
+  let emitted = byOptions.get(key);
+  if (!emitted) byOptions.set(key, (emitted = emitTests(input, root, runtime)));
+  return emitted;
+}
 
 /**
  * A test name as something to compare, rather than to print: the separator
@@ -81,8 +99,7 @@ export const testNameKey = (name: string) =>
 /**
  * The `export type <alias>` a test came from, found by the namespace it was
  * written in: one name can appear under several namespaces in the same file,
- * as `SpecExample` does under both `Tests.encodeMappings` and
- * `Tests.decodeMappings`.
+ * as `SpecExample` does under both `encodeMappings` and `decodeMappings`.
  */
 function aliasOf(
   sf: ts.SourceFile,
@@ -119,7 +136,7 @@ function reachable(
   const queue: ts.Node[] = [from.type];
 
   // A test namespace often takes the name of what it tests — `declare namespace
-  // Tests.decodeMappings` beside `function decodeMappings`. Inside the
+  // decodeMappings` beside `function decodeMappings`. Inside the
   // namespace that name resolves to the namespace, so the symbol alone would
   // lose the function. Falling back to the name finds it.
   const byName = new Map<string, ts.Statement>();
@@ -135,6 +152,31 @@ function reachable(
         if (ts.isIdentifier(declaration.name))
           byName.set(declaration.name.text, statement);
   }
+
+  // Only an identifier spelled like something the file declares — at the top
+  // level or inside a namespace — can resolve to a statement worth keeping, so
+  // the checker is asked about those alone, not about every property name.
+  const declared = new Set<string>();
+  const collect = (block: ts.SourceFile | ts.ModuleBlock) => {
+    for (const statement of block.statements) {
+      if (ts.isVariableStatement(statement))
+        for (const d of statement.declarationList.declarations)
+          if (ts.isIdentifier(d.name)) declared.add(d.name.text);
+      if (ts.isImportDeclaration(statement)) {
+        const clause = statement.importClause;
+        if (clause?.name) declared.add(clause.name.text);
+        if (clause?.namedBindings && ts.isNamespaceImport(clause.namedBindings))
+          declared.add(clause.namedBindings.name.text);
+        if (clause?.namedBindings && ts.isNamedImports(clause.namedBindings))
+          for (const e of clause.namedBindings.elements)
+            declared.add(e.name.text);
+      }
+      const name = (statement as { name?: ts.Node }).name;
+      if (name && ts.isIdentifier(name)) declared.add(name.text);
+    }
+  };
+  collect(sf);
+  for (const { body } of namespaces(sf)) collect(body);
 
   /** The statement of `sf` a declaration belongs to, if any. */
   const statementOf = (node: ts.Node): ts.Statement | undefined => {
@@ -154,7 +196,7 @@ function reachable(
     };
 
     const visit = (child: ts.Node): void => {
-      if (ts.isIdentifier(child)) {
+      if (ts.isIdentifier(child) && declared.has(child.text)) {
         let resolved = false;
         for (const declaration of checker.getSymbolAtLocation(child)
           ?.declarations ?? []) {
@@ -188,12 +230,12 @@ export function minimalFor(
     input,
   }: {
     /** Only reproduce tests written under this namespace. */
-    root?: string;
-    tsconfig?: string;
-    runtime?: string;
-    cache?: boolean;
+    root?: string | undefined;
+    tsconfig?: string | undefined;
+    runtime?: string | undefined;
+    cache?: boolean | undefined;
     /** A program that already holds this file — the plugin has one, so it lends it. */
-    input?: EmitInput;
+    input?: EmitInput | undefined;
   } = {},
 ): string {
   const abs = path.resolve(file);
@@ -207,15 +249,10 @@ export function minimalFor(
   }
 
   // ── 1+2: build the candidate source ─────────────────────────────────────
-  const program = input?.program ?? programFor(abs, configFor(tsconfig).parsed);
+  const program = input?.program ?? programFor(abs, configFor(tsconfig));
   const sf = input?.source ?? program.getSourceFile(abs);
   if (!sf) throw new Error(`cannot load ${file}`);
-  const printedKey = `${root ?? ""}\0${runtime ?? ""}\0${abs}\0${sf.text.length}`;
-  let emitted = printed.get(printedKey);
-  if (!emitted) {
-    emitted = emitTests({ program, source: sf }, root, runtime);
-    printed.set(printedKey, emitted);
-  }
+  const emitted = emittedFor({ program, source: sf }, root, runtime);
 
   // The tests this name stands for, by full name (`add > Simple`) or by alias
   // (`Simple`). A `Table<…>` alias stands for every one of its rows —
@@ -231,19 +268,12 @@ export function minimalFor(
   if (!test) throw new Error(`no test named ${testName} in ${file}`);
   const body = tests.map((t) => t.code).join("\n\n");
 
-  // The preamble, minus whatever this one test does not use. It is not only
-  // imports: the printer also declares helpers there — `nt_unsupported` for
-  // what it could not materialise, `nt_env` for a required variable — and a
-  // test that calls one needs it.
-  const imports = emitted.header.filter((line) => {
-    if (line.startsWith("import "))
-      return (
-        (!line.includes("node:fs") || body.includes("readFileSync")) &&
-        (!line.includes("ntCheck") || body.includes("ntCheck("))
-      );
-    const helper = /^const (nt_\w+)/.exec(line)?.[1];
-    return !!helper && body.includes(`${helper}(`);
-  });
+  // The preamble these tests need, and nothing the rest of the file did — minus
+  // the banner, since this file is written to say where it came from itself
+  const imports = headerLines(
+    allNeeds(tests.map((t) => t.needs)),
+    runtime ?? RUNTIME_MODULE,
+  ).filter((line) => !line.startsWith("//"));
 
   // ── 3: keep only what the test reaches ──────────────────────────────────
   const checker = program.getTypeChecker();
@@ -279,7 +309,7 @@ export function minimalFor(
   return minimal;
 }
 
-declare namespace Tests.testNameKey {
+declare namespace testNameKey {
   /** however the separator is spelled, the same test is the same test */
   export type Spellings = Table<
     typeof testNameKey,
@@ -287,15 +317,18 @@ declare namespace Tests.testNameKey {
       [args: ["add > Simple"], expected: "add>Simple"],
       [args: ["add \u203a Simple"], expected: "add>Simple"],
       [args: ["a>b>c"], expected: "a>b>c"],
-      [args: ["AtTheRoot"], expected: "AtTheRoot"]
+      [args: ["AtTheRoot"], expected: "AtTheRoot"],
     ]
   >;
 }
 
-declare namespace Tests.minimalFor {
+declare namespace minimalFor {
   /** a name written with the other separator still finds its test */
   export type EitherSeparator = Expect<
-    Invoke<typeof minimalForFixture, [fixture: "counter.ts", test: "Counter \u203a Reset"]>,
+    Invoke<
+      typeof minimalForFixture,
+      [fixture: "counter.ts", test: "Counter \u203a Reset"]
+    >,
     "includes",
     "class Counter"
   >;

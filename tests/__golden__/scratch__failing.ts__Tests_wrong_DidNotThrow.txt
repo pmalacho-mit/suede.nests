@@ -1,0 +1,7 @@
+import { test, expect } from "vitest";
+
+const add = (a: number, b: number, c = 0) => a + b + c;
+
+test("Tests > wrong > DidNotThrow", async () => {
+  await expect(async () => (await add(1, 1))).rejects.toThrow();
+});

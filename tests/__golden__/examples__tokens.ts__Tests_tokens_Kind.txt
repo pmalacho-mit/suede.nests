@@ -1,0 +1,19 @@
+import { test, expect } from "vitest";
+
+import ts from "typescript";
+
+/** The kind of the first statement, as TypeScript names it. */
+function firstStatementKind(source: string): string {
+  const file = ts.createSourceFile(
+    "snippet.ts",
+    source,
+    ts.ScriptTarget.ES2022,
+    true,
+  );
+  const first = file.statements[0];
+  return first ? ts.SyntaxKind[first.kind] : "None";
+}
+
+test("Tests > tokens > Kind", async () => {
+  expect(await firstStatementKind("class A {}")).toEqual("ClassDeclaration");
+});

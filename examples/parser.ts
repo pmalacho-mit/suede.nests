@@ -126,7 +126,7 @@ declare namespace Tests.parse {
   export type Negation = Expect<
     Invoke<typeof parse, ["-5"]>,
     "matches",
-    { kind: "neg"; expr: { value: 4 } }
+    { kind: "neg"; expr: { value: 5 } }
   >;
 
   export type Errors = [

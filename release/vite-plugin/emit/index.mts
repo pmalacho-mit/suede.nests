@@ -1,39 +1,53 @@
 // The printer.
-// Turns every `export type X = Expect<…>` within a `declare namespace Tests…`
-// block into an ordinary Vitest test.
+// Turns every `export type X = Expect<…>` within a `declare namespace` block
+// into an ordinary Vitest test, in three stages:
 //
-// There is no IR: a TypeScript *type* literal is printed as the equivalent
-// *value* literal, `Invoke<typeof f, [a]>` prints as `await f(a)`, and each
-// DSL condition maps onto a built-in `expect` matcher.
+//   model.mts   type node → IR: what each node means, using the type checker
+//   ir.mts      the IR itself: expressions, assertions, test cases
+//   print.mts   IR → Vitest source, and what each test needs from the preamble
 //
 // Every test comes back on its own — a top-level `test(…)` named for the
 // namespace path it was written in, with each line anchored to the source line
 // it came from. `render` joins them into the module the plugin appends.
-//
-// The pipeline, each stage in its own module:
-//   context.mts     the shared state (`cx`) every stage threads through
-//   expression.mts  type node  → JS expression
-//   assertion.mts   condition  → `expect` chain, Test node → statements
-//   suite.mts       test alias → one `EmittedTest` per test case
-//   header.mts      the generated module's preamble
-import ts from "typescript";
+import { createEmitContext } from "./context.mts";
+import {
+  isExportedTypeAlias,
+  isTest,
+  lowerAlias,
+  namespaces,
+} from "./model.mts";
+import { allNeeds, headerLines, printTest } from "./print.mts";
 
-import { asEmitContext } from "./context.mts";
-import { headerLines } from "./header.mts";
-import { emitTestAlias, isTest, namespaces } from "./suite.mts";
+import type { EmitInput, Line, Warning } from "./context.mts";
+import type { EmittedTest } from "./print.mts";
 
-import type { EmitInputOrContext, Line, Warning } from "./context.mts";
-import type { EmittedTest } from "./suite.mts";
-
-export { createEmitContext, DSL_FILE, freshTestState } from "./context.mts";
-export * from "./assertion.mts";
-export * from "./context.mts";
-export * from "./expression.mts";
-export * from "./header.mts";
-export * from "./suite.mts";
+export type { EmitContext, EmitInput, Line, Warning } from "./context.mts";
+export type { EmittedTest, Needs } from "./print.mts";
+export * from "./ir.mts";
+export { createEmitContext, DSL_FILE, RUNTIME_MODULE } from "./context.mts";
+export {
+  allNeeds,
+  headerLines,
+  needsOf,
+  printExpr,
+  printStatement,
+  printTest,
+} from "./print.mts";
+export {
+  lowerAlias,
+  lowerBody,
+  lowerExpr,
+  namespaces,
+  testName,
+} from "./model.mts";
 
 import type { Expect, Invoke } from "../../dsl.import.meta.vitest.ts";
-import type { printModule, testNames } from "../../_internal/harness.mts";
+import type {
+  printHeader,
+  printModule,
+  testNames,
+} from "../../_internal/harness.mts";
+
 /** What `emitTests` returns. */
 export type Emitted = {
   /** The generated module's preamble: the imports and helpers every test shares. */
@@ -56,24 +70,23 @@ export type Emitted = {
  * @param runtime Specifier the generated code imports `ntCheck` from.
  */
 export function emitTests(
-  inputOrContext: EmitInputOrContext,
+  { program, source }: EmitInput,
   root?: string,
   runtime?: string,
 ): Emitted {
-  const cx = asEmitContext(inputOrContext);
-  if (runtime) cx.runtime = runtime;
-  const { source } = cx;
-
+  const cx = createEmitContext(program, source, runtime);
   const tests: EmittedTest[] = [];
   for (const { segs, body } of namespaces(source)) {
     if (root && segs[0] !== root) continue;
     for (const stmt of body.statements)
       if (isExportedTypeAlias(stmt) && isTest(cx, stmt.type))
-        tests.push(...emitTestAlias(cx, stmt, segs));
+        tests.push(...lowerAlias(cx, stmt, segs).map(printTest));
   }
   // The header can only be written once every test has said what it needs.
-  if (!tests.length) return { header: [], tests: [], warnings: cx.warnings };
-  return { header: headerLines(cx), tests, warnings: cx.warnings };
+  const header = tests.length
+    ? headerLines(allNeeds(tests.map((t) => t.needs)), cx.runtime)
+    : [];
+  return { header, tests, warnings: cx.warnings };
 }
 
 /** The whole generated module: the preamble, then every test, with per-line anchors. */
@@ -91,7 +104,7 @@ export function render(emitted: Emitted): {
   };
 }
 
-declare namespace Tests.emitTests {
+declare namespace emitTests {
   type Suite = `
     const add = (a: number, b: number) => a + b;
     declare namespace add {
@@ -116,7 +129,7 @@ declare namespace Tests.emitTests {
       "add > Rows[0]",
       "add > Rows[1]",
       "other > nested > Deep",
-      "elsewhere > AlsoATest"
+      "elsewhere > AlsoATest",
     ]
   >;
 
@@ -154,14 +167,41 @@ declare namespace Tests.emitTests {
     "=",
     ""
   >;
-}
 
-/** `export type X = …` inside a namespace block: one test. */
-function isExportedTypeAlias(
-  node: ts.Statement,
-): node is ts.TypeAliasDeclaration {
-  return (
-    ts.isTypeAliasDeclaration(node) &&
-    !!node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
-  );
+  type Plain = `declare namespace a { export type T = Expect<1, "=", 1>; }`;
+  type ReadsFile =
+    `declare namespace a { export type T = Expect<FromFile<"./a.txt">, "=", "hi">; }`;
+  type TypeOnlyImport = `
+    import type { existsSync } from "node:fs";
+    declare namespace a { export type T = Expect<Invoke<typeof existsSync, ["/nowhere"]>, "=", false>; }
+  `;
+
+  /** the preamble is what the tests turned out to need, and nothing when there are none */
+  export type Preamble = [
+    Expect<
+      Invoke<typeof printHeader, [Plain]>,
+      "=",
+      [
+        "// ───────── generated by namespace-tests; not part of your build ─────────",
+        'import { test, expect } from "vitest";',
+      ]
+    >,
+    Expect<
+      Invoke<typeof printHeader, [ReadsFile]>,
+      "includes",
+      'import { readFileSync } from "node:fs";'
+    >,
+    Expect<
+      Invoke<typeof printHeader, ["const add = (a: number) => a;"]>,
+      "=",
+      []
+    >,
+  ];
+
+  /** a type-only binding a test uses as a value is imported again, as a value */
+  export type ValueImport = Expect<
+    Invoke<typeof printHeader, [TypeOnlyImport]>,
+    "includes",
+    'import { existsSync as existsSync$ } from "node:fs"; // value import: the original import is type-only'
+  >;
 }

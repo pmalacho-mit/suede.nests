@@ -44,7 +44,7 @@ export function encodeMappings(lines: readonly (readonly Segment[])[]): string {
     .join(";");
 }
 
-declare namespace Tests.encodeMappings {
+declare namespace encodeMappings {
   /** the spec's worked example: one segment, [0, 0, 16, 1] */
   export type SpecExample = Expect<
     Invoke<typeof encodeMappings, [[[[0, 0, 16, 1]]]]>,
@@ -91,7 +91,7 @@ export function decodeMappings(mappings: string): Segment[][] {
   });
 }
 
-declare namespace Tests.decodeMappings {
+declare namespace decodeMappings {
   /** decoding is the inverse of encoding */
   export type SpecExample = Expect<
     Invoke<typeof decodeMappings, ["AAgBC"]>,
@@ -125,7 +125,7 @@ export function originalPositionFor(
   return best ? { line: best[2], column: best[3] } : null;
 }
 
-declare namespace Tests.originalPositionFor {
+declare namespace originalPositionFor {
   type Line = [[[0, 0, 5, 0], [10, 0, 7, 3]]];
 
   /** the last segment at or before the column wins */

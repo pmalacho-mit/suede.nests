@@ -209,7 +209,7 @@ export const nameKey = (name: string) =>
     .map((segment) => segment.trim())
     .join(">");
 
-declare namespace Tests.nameKey {
+declare namespace nameKey {
   /** however the separator is spelled, the same test is the same test */
   export type Spellings = Table<
     typeof nameKey,

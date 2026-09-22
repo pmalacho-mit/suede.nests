@@ -8,7 +8,7 @@
  * ```ts
  * const add = (a: number, b: number) => a + b;
  *
- * declare namespace Tests.add {
+ * declare namespace add {
  *   /** 4 + 5 is 9 *\/
  *   export type Simple = Expect<Invoke<typeof add, [4, 5]>, "=", 9>;
  * }
@@ -16,8 +16,8 @@
  *
  * The type checker gives you *shape* checking for free (you cannot expect a
  * string from a function that returns a number, or pass three arguments to a
- * two-argument function). The namespace-tests runtime (see docs/) then
- * *evaluates* the type-level program to check the actual *values*.
+ * two-argument function). The namespace-tests plugin then *evaluates* the
+ * type-level program to check the actual *values*.
  *
  * ───────────────────────────────────────────────────────────────────────────
  * Conventions
@@ -29,7 +29,7 @@
  *
  * 2. `export` every test alias. Non-exported aliases trip `noUnusedLocals`.
  *    Because exported members merge across namespace blocks, scope tests to
- *    their subject with a dotted name: `declare namespace Tests.add { ... }`.
+ *    their subject with a dotted name: `declare namespace add { ... }`.
  *    Each test is emitted on its own, named for the dotted path it was
  *    written in (`add > Simple`).
  *
@@ -43,7 +43,7 @@
  * resolved type, so it sees intent — `Invoke<...>` — rather than result —
  * `number`) and prints ordinary Vitest code, which Vitest then runs. Type
  * literals print as the equivalent value literals; DSL nodes print as calls
- * and `expect` matchers. See nt/emit.mjs. The rules:
+ * and `expect` matchers. See vite-plugin/emit/. The rules:
  *
  * - **Literals materialize to themselves.** `4`, `"olivia"`, `true`, `null`,
  *   `undefined`, `10n`, `-1`, tuples `[1, 2]` and object literals
@@ -354,16 +354,32 @@ export type NullaryCondition =
   | "isFinite";
 
 /**
- * Every key optional, at any depth — but a list stays a list. Mapping over the
- * array keeps a tuple a tuple, so an expected list written for a tuple actual
- * is checked position by position, which is how `toMatchObject` compares them:
+ * Every key optional, at any depth — but a list stays a list. Mapping over a
+ * tuple keeps it a tuple, so an expected list written for a tuple actual is
+ * checked position by position, which is how `toMatchObject` compares them:
  * element-wise, same length, in order.
+ *
+ * A plain array is written as `readonly DeepPartial<Element>[]` rather than
+ * mapped over. The compiler defers an array of an alias but expands a mapped
+ * array eagerly, and on a recursive type (a JSON value, say) that expansion
+ * never bottoms out ("type instantiation is excessively deep"). The tuple test
+ * is type-fest's: an array of the element type is assignable to a plain array
+ * and never to a tuple, whatever its optional or rest elements. `readonly`
+ * because this is only ever the type of an *expected* value, and a readonly
+ * target accepts a readonly or a mutable literal alike.
+ *
+ * A function is left as it is: a mapped type would keep its properties and
+ * drop its call signature, so `{ onClick: () => void }` would accept anything.
  */
-export type DeepPartial<T> = T extends readonly unknown[]
-  ? { [Index in keyof T]: DeepPartial<T[Index]> }
-  : T extends object
-    ? { [K in keyof T]?: DeepPartial<T[K]> }
-    : T;
+export type DeepPartial<T> = T extends (...args: any[]) => unknown
+  ? T
+  : T extends readonly (infer Element)[]
+    ? Element[] extends T
+      ? readonly DeepPartial<Element>[]
+      : { [Index in keyof T]: DeepPartial<T[Index]> }
+    : T extends object
+      ? { [K in keyof T]?: DeepPartial<T[K]> }
+      : T;
 
 type ElementOf<T> = T extends readonly (infer U)[]
   ? U
@@ -430,7 +446,7 @@ export interface ThrowsMatcher {
   readonly matches?: string; // regex source
 }
 
-/** The page is loaded relative to the test file. See docs/DISPLAY_PAGES.md. */
+/** The page is loaded relative to the test file. */
 export type DisplayPage = `${string}.html`;
 
 export type Config = Partial<{

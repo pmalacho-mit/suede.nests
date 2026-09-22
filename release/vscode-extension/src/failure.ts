@@ -51,7 +51,7 @@ export function explain(failure: Failure): string {
   return parts.join("\n");
 }
 
-declare namespace Tests.frames {
+declare namespace frames {
   type Stack = `AssertionError: nope
     at Proxy.<anonymous> (/repo/node_modules/vitest/dist/chunks/index.js:2040:10)
     at /repo/examples/parser.parse_Negation.namespace.test.ts:75:29
@@ -78,7 +78,7 @@ declare namespace Tests.frames {
   >;
 }
 
-declare namespace Tests.explain {
+declare namespace explain {
   /** the message, then what it expected against what it got, then where */
   export type WithDiff = Expect<
     Invoke<

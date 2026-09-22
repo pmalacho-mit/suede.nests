@@ -1,0 +1,10 @@
+import { test, expect } from "vitest";
+
+function mean(xs: ArrayLike<number>): number {
+  if (xs.length === 0) return NaN;
+  return Array.from(xs).reduce((a, b) => a + b, 0) / xs.length;
+}
+
+test("Tests > mean > FloatingPoint", async () => {
+  expect(Math.abs(await mean([0.1, 0.2, 0.3]) - 0.2)).toBeLessThanOrEqual(1e-15);
+});

@@ -71,7 +71,7 @@ export function extracted(text: string): {
   };
 }
 
-declare namespace Tests.tempPathFor {
+declare namespace tempPathFor {
   /** beside the module, named for the module and the test */
   export type Names = Table<
     typeof tempPathFor,
@@ -88,7 +88,7 @@ declare namespace Tests.tempPathFor {
   >;
 }
 
-declare namespace Tests.extracted {
+declare namespace extracted {
   type Body = "test('x', () => {});";
   type File = Invoke<
     typeof extract,

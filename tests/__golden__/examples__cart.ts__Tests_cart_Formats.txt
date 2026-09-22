@@ -1,0 +1,8 @@
+import { test, expect } from "vitest";
+
+import { conversionCount, formatCents } from "./lib/money.ts";
+
+/** a first-party import is used exactly as the module uses it */
+test("Tests > cart > Formats", async () => {
+  expect(await formatCents(1234)).toEqual("$12.34");
+});

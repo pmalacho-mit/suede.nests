@@ -8,12 +8,12 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
-import type { Expect, Invoke, Table } from "../dsl.import.meta.vitest.ts";
+import type { Table } from "../dsl.import.meta.vitest.ts";
 
 /**
- * Pruning asks TypeScript to delete every unused declaration, over and over
- * until nothing is left to delete. That is worth paying once per test, not once
- * per run, so results are cached against the source they were derived from.
+ * Printing a test means building a program over its file and following what
+ * it reaches. That is worth paying once per test, not once per run, so results
+ * are cached against the source they were derived from.
  */
 export const cacheDir = path.join(".namespace-tests", "minimal");
 

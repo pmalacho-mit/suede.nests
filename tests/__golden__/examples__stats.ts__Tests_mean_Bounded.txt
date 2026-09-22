@@ -1,0 +1,13 @@
+import { test, expect } from "vitest";
+
+function mean(xs: ArrayLike<number>): number {
+  if (xs.length === 0) return NaN;
+  return Array.from(xs).reduce((a, b) => a + b, 0) / xs.length;
+}
+
+test("Tests > mean > Bounded", async () => {
+  const Sample = [2, 4, 4, 4, 5, 5, 7, 9];
+  expect.soft(await mean(Sample)).toBeGreaterThanOrEqual(2);
+  expect.soft(await mean(Sample)).toBeLessThanOrEqual(9);
+  expect.soft(await mean(Sample)).toSatisfy(Number.isFinite);
+});

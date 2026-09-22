@@ -112,7 +112,7 @@ export function encode(value: unknown, seen: Map<object, string> = new Map(), pa
   return out;
 }
 
-declare namespace Tests.encode {
+declare namespace encode {
   /** what JSON already carries goes through unchanged */
   export type Plain = Expect<
     Invoke<typeof encode, [[1, "a", true]]>,
@@ -187,7 +187,7 @@ export function decode(value: Encoded): unknown {
   return out;
 }
 
-declare namespace Tests.decode {
+declare namespace decode {
   /** a tagged bigint comes back as a real one */
   export type BigIntBack = Expect<
     Invoke<typeof decode, [{ $type: "bigint"; value: "10" }]>,

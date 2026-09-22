@@ -1,0 +1,18 @@
+import { test, expect } from "vitest";
+
+/** Turn arbitrary text into a URL-safe slug. */
+function slugify(input: string, maxLength = 64): string {
+  return input
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, maxLength);
+}
+
+test("Tests > slugify > NoLeadingOrTrailingDash", async () => {
+  expect.soft(await slugify("--foo--")).toSatisfy((s: string) => s.startsWith("f"));
+  expect.soft(await slugify("--foo--")).toSatisfy((s: string) => s.endsWith("o"));
+  expect.soft(await slugify("--foo--")).not.toContain("--");
+});
