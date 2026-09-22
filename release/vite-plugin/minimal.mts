@@ -99,7 +99,8 @@ export const testNameKey = (name: string) =>
 /**
  * The `export type <alias>` a test came from, found by the namespace it was
  * written in: one name can appear under several namespaces in the same file,
- * as `SpecExample` does under both `encodeMappings` and `decodeMappings`.
+ * as `Rows` does under both `nameKey` and `testFilter` in the extension's
+ * `discovery.ts`.
  */
 function aliasOf(
   sf: ts.SourceFile,
@@ -136,9 +137,9 @@ function reachable(
   const queue: ts.Node[] = [from.type];
 
   // A test namespace often takes the name of what it tests — `declare namespace
-  // decodeMappings` beside `function decodeMappings`. Inside the
-  // namespace that name resolves to the namespace, so the symbol alone would
-  // lose the function. Falling back to the name finds it.
+  // testNameKey` beside `function testNameKey`. Inside the namespace that name
+  // resolves to the namespace, so the symbol alone would lose the function.
+  // Falling back to the name finds it.
   const byName = new Map<string, ts.Statement>();
   for (const statement of sf.statements) {
     if (

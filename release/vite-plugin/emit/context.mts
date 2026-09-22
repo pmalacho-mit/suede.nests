@@ -2,7 +2,6 @@
 // the warnings so far, and the state of the test being lowered. Passed
 // explicitly as `cx` so each stage can be built — and tested — on its own.
 import ts from "typescript";
-
 import type { Binding, Expr } from "./ir.mts";
 
 /**

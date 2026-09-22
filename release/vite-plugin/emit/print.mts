@@ -11,6 +11,7 @@ import type {
   Binding,
   ConditionName,
   Expr,
+  Param,
   Statement,
   TestCase,
 } from "./ir.mts";
@@ -420,9 +421,12 @@ export function printAssertion(a: Assertion): string[] {
 export const printStatement = (s: Statement): string[] =>
   s.kind === "effect" ? [`${printExpr(s.expr)};`] : printAssertion(s);
 
+const printParam = (p: Param) =>
+  `${p.name}: ${p.type}${p.fallback ? ` = ${printExpr(p.fallback)}` : ""}`;
+
 const printBinding = (b: Binding) =>
   b.params
-    ? `const ${b.name} = async (${b.params.join(", ")}) => ${printExpr(b.value)};`
+    ? `const ${b.name} = async (${b.params.map(printParam).join(", ")}) => ${printExpr(b.value)};`
     : `const ${b.name}${b.annotation ? `: ${b.annotation}` : ""} = ${printExpr(b.value)};`;
 
 // ── tests ───────────────────────────────────────────────────────────────────
@@ -456,7 +460,10 @@ export function needsOf(t: TestCase): Needs {
     else if (e.kind === "unsupported") needs.unsupported = true;
     children(e).forEach(visit);
   };
-  t.bindings.forEach((b) => visit(b.value));
+  t.bindings.forEach((b) => {
+    b.params?.forEach((p) => p.fallback && visit(p.fallback));
+    visit(b.value);
+  });
   t.body.flatMap(exprsOf).forEach(visit);
   return needs;
 }

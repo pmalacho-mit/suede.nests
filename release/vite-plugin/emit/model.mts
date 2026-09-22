@@ -18,14 +18,7 @@ import type {
 } from "./ir.mts";
 
 import type { Expect, Invoke, Table } from "../../dsl.import.meta.vitest.ts";
-import type {
-  expressionWarnings,
-  moduleWarnings,
-  printAlias,
-  printExpression,
-  printStatements,
-  testNames,
-} from "../../_internal/harness.mts";
+import type * as harness from "../../_internal/harness.mts";
 
 // ── expressions ─────────────────────────────────────────────────────────────
 
@@ -96,13 +89,9 @@ export function lowerExpr(cx: EmitContext, node: ts.TypeNode): Expr {
 }
 
 declare namespace lowerExpr {
-  type Add = `
-    const add = (a: number, b: number) => a + b;
-  `;
-
   /** a type literal prints as the value literal it describes */
   export type Literals = Table<
-    typeof printExpression,
+    typeof harness.printExpression,
     [
       [
         args: [
@@ -118,11 +107,15 @@ declare namespace lowerExpr {
     ]
   >;
 
+  type Add = `
+    const add = (a: number, b: number) => a + b;
+  `;
+
   /** `Invoke` is the call it stands for, awaited */
   export type Invocation = Expect<
     Invoke<
-      typeof printExpression,
-      [`${Add}type Subject = Invoke<typeof add, [4, 5]>;`]
+      typeof harness.printExpression,
+      [`${Add}\ntype Subject = Invoke<typeof add, [4, 5]>;`]
     >,
     "=",
     "await add(4, 5)"
@@ -131,7 +124,7 @@ declare namespace lowerExpr {
   /** an alias the test references is hoisted into a const, so this is its name */
   export type AliasReference = Expect<
     Invoke<
-      typeof printExpression,
+      typeof harness.printExpression,
       [`${Add}type Sum = Invoke<typeof add, [1, 2]>;\ntype Subject = Sum;`]
     >,
     "=",
@@ -140,7 +133,7 @@ declare namespace lowerExpr {
 
   /** reading the environment goes through a helper unless a default is given */
   export type Environment = Table<
-    typeof printExpression,
+    typeof harness.printExpression,
     [
       [args: ['type Subject = Env<"TOKEN">;'], expected: 'nt_env("TOKEN")'],
       [
@@ -152,7 +145,7 @@ declare namespace lowerExpr {
 
   /** what the compiler works out itself — `Uppercase<…>` and its siblings */
   export type Intrinsics = Table<
-    typeof printExpression,
+    typeof harness.printExpression,
     [
       [args: ['type Subject = Uppercase<"ab">;'], expected: '"AB"'],
       [args: ['type Subject = Capitalize<"ab">;'], expected: '"Ab"'],
@@ -165,13 +158,13 @@ declare namespace lowerExpr {
 
   /** what cannot be a value throws when the test runs, and is reported now */
   export type NotAValue = Expect<
-    Invoke<typeof printExpression, ["type Subject = number;"]>,
+    Invoke<typeof harness.printExpression, ["type Subject = number;"]>,
     "=",
     'nt_unsupported("number")'
   >;
 
   export type NotAValueWarns = Expect<
-    Invoke<typeof expressionWarnings, ["type Subject = number;"]>,
+    Invoke<typeof harness.expressionWarnings, ["type Subject = number;"]>,
     "=",
     ["`number` is a type, not a value"]
   >;
@@ -179,7 +172,7 @@ declare namespace lowerExpr {
   /** a DSL intrinsic given too few arguments says how many it wants */
   export type Arity = Expect<
     Invoke<
-      typeof expressionWarnings,
+      typeof harness.expressionWarnings,
       [`${Add}type Subject = Invoke<typeof add>;`]
     >,
     "=",
@@ -189,7 +182,7 @@ declare namespace lowerExpr {
   /** an awaited receiver is parenthesised before its method is called */
   export type AwaitedReceiver = Expect<
     Invoke<
-      typeof printExpression,
+      typeof harness.printExpression,
       [`${Add}type Subject = Call<Invoke<typeof add, [1, 2]>, "toFixed", [1]>;`]
     >,
     "=",
@@ -344,9 +337,14 @@ function register(
   const binding: Binding = {
     name: clashes ? `${decl.name.text}$` : decl.name.text,
     params:
-      decl.typeParameters?.map(
-        (p) => `${p.name.text}: ${p.constraint?.getText() ?? "unknown"}`,
-      ) ?? null,
+      decl.typeParameters?.map((p) => ({
+        name: p.name.text,
+        type: p.constraint?.getText() ?? "unknown",
+        // `Key<"a.ts", "T">` leaves a defaulted parameter out, and means the
+        // default by doing so; the printed parameter has to stand in for it the
+        // same way, or the call arrives one argument short
+        fallback: p.default ? lowerExpr(cx, p.default) : null,
+      })) ?? null,
     // `Fixture<T, I>` keeps `T` on the const, so the generated code re-checks the DSL's guarantee
     annotation:
       ts.isTypeReferenceNode(decl.type) && cx.dslName(decl.type) === "Fixture"
@@ -579,7 +577,7 @@ declare namespace lowerBody {
   /** one `Expect` is one statement */
   export type Assertion_ = Expect<
     Invoke<
-      typeof printStatements,
+      typeof harness.printStatements,
       [`${Add}type Subject = Expect<Invoke<typeof add, [1, 1]>, "=", 2>;`]
     >,
     "=",
@@ -589,7 +587,7 @@ declare namespace lowerBody {
   /** `Given` runs its effects first, then the test underneath */
   export type Effects = Expect<
     Invoke<
-      typeof printStatements,
+      typeof harness.printStatements,
       [
         `${Add}type Subject = Given<Invoke<typeof add, [1, 1]>, Expect<1, "truthy">>;`,
       ]
@@ -601,7 +599,7 @@ declare namespace lowerBody {
   /** a tuple of expectations is soft, so every one of them reports */
   export type Tuple = Expect<
     Invoke<
-      typeof printStatements,
+      typeof harness.printStatements,
       [`${Add}type Subject = [Expect<1, "=", 1>, Expect<2, "=", 2>];`]
     >,
     "=",
@@ -611,7 +609,7 @@ declare namespace lowerBody {
   /** `Throws` awaits the rejection of a thunk */
   export type Rejection = Expect<
     Invoke<
-      typeof printStatements,
+      typeof harness.printStatements,
       [`${Add}type Subject = Throws<Invoke<typeof add, [1, 1]>, RangeError>;`]
     >,
     "=",
@@ -620,7 +618,7 @@ declare namespace lowerBody {
 
   /** what is not a test says so where it was written, and fails when run */
   export type NotATest = Expect<
-    Invoke<typeof printStatements, ["type Subject = 1;"]>,
+    Invoke<typeof harness.printStatements, ["type Subject = 1;"]>,
     "=",
     ['nt_unsupported("1");']
   >;
@@ -675,7 +673,7 @@ declare namespace isTest {
 
   /** what the namespace is called does not decide; where the type came from does */
   export type Collected = Expect<
-    Invoke<typeof testNames, [Suite]>,
+    Invoke<typeof harness.testNames, [Suite]>,
     "=",
     [
       "anything > Assertion",
@@ -688,7 +686,7 @@ declare namespace isTest {
 
   /** an exported alias that is not the DSL's at all is not a test */
   export type NotOurs = Expect<
-    Invoke<typeof testNames, [Suite]>,
+    Invoke<typeof harness.testNames, [Suite]>,
     "excludes",
     "anything > Helper"
   >;
@@ -698,7 +696,7 @@ declare namespace isTest {
    * says it cannot be run, reported where it is written.
    */
   export type SaysWhy = Expect<
-    Invoke<typeof moduleWarnings, [Suite]>,
+    Invoke<typeof harness.moduleWarnings, [Suite]>,
     "=",
     [
       "`Invoke<typeof add, [1, 1]>` is not a test: write Expect, Throws, Given or Table (or a tuple of them)",
@@ -890,21 +888,21 @@ declare namespace lowerAlias {
 
   /** a test alias becomes one top-level test, its JSDoc kept as the description */
   export type Simple = Expect<
-    Invoke<typeof printAlias, [Suite, "Simple"]>,
+    Invoke<typeof harness.printAlias, [Suite, "Simple"]>,
     "=",
     '/** four plus five */\ntest("add > Simple", async () => {\n  expect(await add(4, 5)).toEqual(9);\n});'
   >;
 
   /** a table row is a test of its own, indexed by row */
   export type TableRow = Expect<
-    Invoke<typeof printAlias, [Suite, "Rows"]>,
+    Invoke<typeof harness.printAlias, [Suite, "Rows"]>,
     "=",
     'test("add > Rows[0]", async () => {\n  expect(await add(1, 1)).toEqual(2);\n});'
   >;
 
   /** `Todo` has no body at all */
   export type Pending = Expect<
-    Invoke<typeof printAlias, [Suite, "Later"]>,
+    Invoke<typeof harness.printAlias, [Suite, "Later"]>,
     "=",
     'test.todo("add > Later");'
   >;
@@ -912,12 +910,12 @@ declare namespace lowerAlias {
   /** `Skip` picks the Vitest function, and keeps the test underneath — rows included */
   export type Skipped = [
     Expect<
-      Invoke<typeof printAlias, [Suite, "Skipped"]>,
+      Invoke<typeof harness.printAlias, [Suite, "Skipped"]>,
       "startsWith",
       'test.skip("add > Skipped"'
     >,
     Expect<
-      Invoke<typeof printAlias, [Suite, "SkippedRows"]>,
+      Invoke<typeof harness.printAlias, [Suite, "SkippedRows"]>,
       "startsWith",
       'test.skip("add > SkippedRows[0]"'
     >,
@@ -925,7 +923,7 @@ declare namespace lowerAlias {
 
   /** `Configure` becomes Vitest's own options */
   export type Configured = Expect<
-    Invoke<typeof printAlias, [Suite, "Slow"]>,
+    Invoke<typeof harness.printAlias, [Suite, "Slow"]>,
     "startsWith",
     'test("add > Slow", {"timeout":50,"retry":2}, async () => {'
   >;

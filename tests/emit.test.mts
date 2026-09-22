@@ -56,6 +56,34 @@ describe("expressions", () => {
     });
   });
 
+  test("a generic alias becomes a function, and its defaults become defaults", () => {
+    const { cx, alias, type } = contextFor(`
+      const key = (source: string, root?: string) => \`\${source}:\${root}\`;
+      type Key<Source extends string, Root extends string | undefined = undefined> =
+        Invoke<typeof key, [Source, Root]>;
+      type Ref = Key<"a.ts">;
+      declare namespace key {
+        export type Same = Expect<Key<"a.ts">, "=", Key<"a.ts", undefined>>;
+      }
+    `);
+    // the reference leaves `Root` out, so the call does too — the parameter has
+    // to carry the default the type parameter declared, or `key` is called with
+    // one argument less than it was written to take
+    expect(printExpr(lowerExpr(cx, type("Ref")))).toBe('await Key("a.ts")');
+    expect(cx.test.order[0]?.params).toEqual([
+      { name: "Source", type: "string", fallback: null },
+      {
+        name: "Root",
+        type: "string | undefined",
+        fallback: { kind: "literal", source: "undefined" },
+      },
+    ]);
+    const [emitted] = lowerAlias(cx, alias("Same"), ["key"]).map(printTest);
+    expect(emitted?.code).toContain(
+      "const Key = async (Source: string, Root: string | undefined = undefined) =>",
+    );
+  });
+
   test("suffixes an alias whose name is taken by a value in scope", () => {
     const { cx, type } = contextFor(`
       const add = (a: number, b: number) => a + b;

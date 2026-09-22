@@ -8,7 +8,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
-import type { Table } from "../dsl.import.meta.vitest.ts";
+import type { Table, Invoke } from "../dsl.import.meta.vitest.ts";
 
 /**
  * Printing a test means building a program over its file and following what
@@ -75,21 +75,33 @@ export function write(key: string, text: string): void {
 }
 
 declare namespace cacheKey {
+  type Key<
+    Source extends string,
+    TestName extends string,
+    Root extends string | undefined = undefined,
+  > = Invoke<typeof cacheKey, [Source, TestName, Root]>;
+
   /** what a test is filed under depends on everything that shaped it */
   export type Differs = Table<
-    typeof differ,
+    typeof cacheKey,
     [
-      [args: [["a.ts", "T"], ["a.ts", "T"]], expected: false],
-      [args: [["a.ts", "T"], ["a.ts", "Other"]], expected: true],
-      [args: [["a.ts", "T"], ["different source", "T"]], expected: true],
-      [args: [["a.ts", "T", "Tests"], ["a.ts", "T", "Spec"]], expected: true],
-      [args: [["a.ts", "T", "", "./rt.mts"], ["a.ts", "T"]], expected: true]
+      [args: ["a.ts", "T"], condition: "=", expected: Key<"a.ts", "T">],
+      [args: ["a.ts", "T"], condition: "!=", expected: Key<"a.ts", "Other">],
+      [
+        args: ["a.ts", "T"],
+        condition: "!=",
+        expected: Key<"different source", "T">,
+      ],
+      [
+        args: ["a.ts", "T", "Tests"],
+        condition: "!=",
+        expected: Key<"a.ts", "T", "Spec">,
+      ],
+      [
+        args: ["a.ts", "T", "", "./rt.mts"],
+        condition: "!=",
+        expected: Key<"a.ts", "T">,
+      ],
     ]
   >;
 }
-
-/** Test support: do these two lookups land on different entries? */
-export const differ = (
-  a: [string, string, string?, string?],
-  b: [string, string, string?, string?],
-) => cacheKey(...a) !== cacheKey(...b);

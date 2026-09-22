@@ -6,12 +6,14 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import picomatch from "picomatch";
+import { encode } from "@jridgewell/sourcemap-codec";
+import { init, parse } from "es-module-lexer";
 import { emittedFor, minimalFor } from "./minimal.mts";
-import { encodeMappings } from "./sourcemap.mts";
 
 import type { Plugin, ViteUserConfig } from "vitest/config";
+import type { SourceMapSegment } from "@jridgewell/sourcemap-codec";
+import type { ImportSpecifier } from "es-module-lexer";
 import type { Warning } from "./emit/index.mts";
-import type { Segment } from "./sourcemap.mts";
 import type { Expect, Invoke } from "../dsl.import.meta.vitest.ts";
 
 export type Options = {
@@ -313,60 +315,34 @@ export default function namespaceTests({
   };
 
   /**
-   * Give a module's own imports the fork's tag. The specifiers are found in the
-   * parsed module, never by matching text: a string that merely *looks* like an
-   * import — a snippet of source held in a constant, say — must be left alone.
+   * Give a module's own imports the fork's tag. The specifiers come from the
+   * module's own import statements, as `es-module-lexer` reads them off — never
+   * by matching text: a string that merely *looks* like an import, a snippet of
+   * source held in a constant say, must be left alone.
    */
-  function fork(
-    parse: (code: string) => unknown,
-    code: string,
-    tag: string,
-  ): string {
-    const edits: { start: number; end: number; text: string }[] = [];
-    const tagged = (node: unknown) => {
-      const literal = node as {
-        type?: string;
-        value?: unknown;
-        start?: number;
-        end?: number;
-      };
-      if (literal?.type !== "Literal" || typeof literal.value !== "string")
-        return;
-      const spec = literal.value;
-      if (!spec.startsWith(".")) return;
-      if (literal.start === undefined || literal.end === undefined) return;
-      edits.push({
-        start: literal.start,
-        end: literal.end,
-        text: JSON.stringify(
-          `${spec}${spec.includes("?") ? "&" : "?"}${FORK}=${tag}`,
-        ),
-      });
-    };
-
-    const walk = (node: unknown): void => {
-      if (!node || typeof node !== "object") return;
-      if (Array.isArray(node)) return void node.forEach(walk);
-      const n = node as { type?: string; source?: unknown };
-      if (
-        n.type === "ImportDeclaration" ||
-        n.type === "ExportNamedDeclaration" ||
-        n.type === "ExportAllDeclaration" ||
-        n.type === "ImportExpression"
-      )
-        tagged(n.source);
-      for (const value of Object.values(node)) walk(value);
-    };
-
+  async function fork(code: string, tag: string): Promise<string> {
+    let imports: readonly ImportSpecifier[];
     try {
-      walk(parse(code));
+      await init;
+      [imports] = parse(code);
     } catch {
-      return code; // not parseable here; leave it to the rest of the pipeline
+      return code; // not lexable here; leave it to the rest of the pipeline
     }
-    let out = code;
-    for (const edit of edits.sort((a, b) => b.start - a.start))
-      out = out.slice(0, edit.start) + edit.text + out.slice(edit.end);
-    return out;
+    let out = "";
+    let last = 0;
+    // the lexer reports them in source order, so one pass rewrites them all
+    for (const { n: spec, s: start, e: end, d: dynamic } of imports) {
+      // `n` is undefined for `import.meta` and for a dynamic specifier that is
+      // not a plain string — neither names a module we could fork
+      if (!spec?.startsWith(".")) continue;
+      const tagged = `${spec}${spec.includes("?") ? "&" : "?"}${FORK}=${tag}`;
+      // a static import's span is the specifier inside its quotes; a dynamic
+      // one's is the whole literal, which may be a template
+      out += code.slice(last, start);
+      out += dynamic > -1 ? JSON.stringify(tagged) : tagged;
+      last = end;
+    }
+    return out + code.slice(last);
   }
 
   /** The program the plugin already built, if it holds `file`. */
@@ -450,7 +426,6 @@ export default function namespaceTests({
       if (!entry) return null;
       // the whole point: one test, and only the code it needs to run
       return fork(
-        (code) => this.parse(code),
         minimalFor(entry.source, entry.test, {
           root,
           tsconfig,
@@ -467,15 +442,11 @@ export default function namespaceTests({
       for (const [generatedId, entry] of generated)
         if (entry.source === id) generated.delete(generatedId);
     },
-    transform(code, rawId) {
+    async transform(code, rawId) {
       const id = rawId.split("?")[0] ?? rawId;
       // a forked module: hand its own imports the same tag, so the fork is deep
       const forked = forkOf(rawId);
-      if (forked)
-        return {
-          code: fork((c) => this.parse(c), code, forked.tag),
-          map: null,
-        };
+      if (forked) return { code: await fork(code, forked.tag), map: null };
 
       if (!/\.[cm]?tsx?$/.test(id) || !marker.test(code)) return null;
       roots.add(id);
@@ -533,9 +504,10 @@ export default function namespaceTests({
       // Each import is anchored to the `export type` it runs, so Vitest reports
       // the test at the line it was written on.
       const origLines = code.split("\n").length;
-      const lines: Segment[][] = Array.from({ length: origLines }, (_, l) => [
-        [0, 0, l, 0],
-      ]);
+      const lines: SourceMapSegment[][] = Array.from(
+        { length: origLines },
+        (_, l) => [[0, 0, l, 0]],
+      );
       for (const l of collector)
         lines.push(l.line === null ? [] : [[2, 0, l.line, 0]]);
       const map = {
@@ -544,7 +516,7 @@ export default function namespaceTests({
         sources: [id],
         sourcesContent: [code],
         names: [],
-        mappings: encodeMappings(lines),
+        mappings: encode(lines),
       };
       return {
         code: `${code}\n${collector.map((l) => l.code).join("\n")}`,

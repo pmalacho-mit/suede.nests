@@ -4,6 +4,7 @@ import fs from "node:fs";
 import { createEmitContext, emitTests } from "../release/vite-plugin/emit/index.mts";
 import plugin from "../release/vite-plugin/plugin.mts";
 
+import type { EncodedSourceMap } from "@jridgewell/trace-mapping";
 import type { Emitted } from "../release/vite-plugin/emit/index.mts";
 import type { Plugin } from "vitest/config";
 
@@ -34,7 +35,7 @@ export function emitFor(file: string): Emitted {
  * Drive the plugin's transform directly, without Vite.
  * @param file Relative to the repo root.
  */
-export async function transformFor(file: string): Promise<{ code: string, map: { mappings: string } }> {
+export async function transformFor(file: string): Promise<{ code: string, map: EncodedSourceMap }> {
   const p = plugin({ scan: false, include: [file] });
   const hook = typeof p.transform === "function" ? p.transform : p.transform?.handler;
   if (!hook) throw new Error("plugin has no transform hook");
@@ -42,7 +43,7 @@ export async function transformFor(file: string): Promise<{ code: string, map: {
   const ctx = { warn() {} } as unknown as ThisParameterType<Extract<NonNullable<Plugin["transform"]>, Function>>;
   const result = await hook.call(ctx, fs.readFileSync(abs, "utf8"), abs, undefined);
   if (!result || typeof result === "string" || typeof result.code !== "string" || !result.map || typeof result.map !== "object" || !("mappings" in result.map) || typeof result.map.mappings !== "string") throw new Error(`no transform result for ${file}`);
-  return { code: result.code, map: { mappings: result.map.mappings } };
+  return { code: result.code, map: result.map as EncodedSourceMap };
 }
 
 // ── unit-test scaffolding for the printer's pieces ─────────────────────────

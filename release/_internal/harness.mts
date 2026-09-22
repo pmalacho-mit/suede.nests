@@ -33,8 +33,44 @@ import { minimalFor } from "../vite-plugin/minimal.mts";
 
 import type { EmitContext, EmitInput } from "../vite-plugin/emit/index.mts";
 
+type Join<
+  T extends readonly string[],
+  Sep extends string = "",
+> = T extends readonly [infer F extends string, ...infer R extends string[]]
+  ? R extends []
+    ? F
+    : `${F}${Sep}${Join<R, Sep>}`
+  : "";
+
+const join = <T extends string[], Seperator extends string>(
+  items: T,
+  seperator: Seperator,
+) => items.join(seperator) as Join<T, Seperator>;
+
+export const importFromDsl = <T extends string[]>(...identifiers: T) =>
+  `import type { ${join(identifiers, ", ")} } from "../dsl.import.meta.vitest.ts";\n` as const;
+
 /** Prefixed to every snippet, so `Expect`, `Invoke` and friends resolve. */
-export const DSL_IMPORT = `import type { Expect, Invoke, Construct, Call, Fixture, Widen, FromFile, Env, Snapshot, Nothing, Given, ExpectGiven, Throws, Table, Skip, Only, Todo, Configure } from "../dsl.import.meta.vitest.ts";\n`;
+export const DSL_IMPORT = importFromDsl(
+  "Expect",
+  "Invoke",
+  "Construct",
+  "Call",
+  "Fixture",
+  "Widen",
+  "FromFile",
+  "Env",
+  "Snapshot",
+  "Nothing",
+  "Given",
+  "ExpectGiven",
+  "Throws",
+  "Table",
+  "Skip",
+  "Only",
+  "Todo",
+  "Configure",
+);
 
 /**
  * Snippets name their namespace after whatever they are about, the way a test

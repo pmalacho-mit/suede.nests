@@ -77,11 +77,20 @@ export type Effect = { kind: "effect"; expr: Expr };
 /** One statement of a test body, anchored to the 0-based source line it came from. */
 export type Statement = (Assertion | Effect) & { line: number | null };
 
+/** One parameter of a generic alias: a type parameter, as a value. */
+export type Param = {
+  name: string;
+  /** The annotation, from the type parameter's constraint: `string`, `unknown`. */
+  type: string;
+  /** What a reference that leaves it out gets — the type parameter's default, or null. */
+  fallback: Expr | null;
+};
+
 /** A user alias the test references, hoisted to a `const` — or, when generic, an async arrow. */
 export type Binding = {
   name: string;
-  /** Parameters as printed (`S: string`), or null for a plain const. */
-  params: string[] | null;
+  /** Its parameters, or null for a plain const. */
+  params: Param[] | null;
   /** A declared type for the const (`Fixture<T, …>` keeps `T`), or null. */
   annotation: string | null;
   value: Expr;
