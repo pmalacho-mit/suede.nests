@@ -1,0 +1,22 @@
+{
+  "// purpose": "Type-checks the DSL, the examples and the scratch fixtures — and is the config the plugin/printer reads when the tests drive them.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["release/dsl.import.meta.vitest.ts", "examples/**/*.ts", "scratch/**/*.ts"]
+}

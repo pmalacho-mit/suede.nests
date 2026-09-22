@@ -1,0 +1,4 @@
+.namespace-tests/
+node_modules
+# ejected namespace tests: scratch files you can regenerate
+*.temp.ts

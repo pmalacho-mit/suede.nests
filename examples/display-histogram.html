@@ -1,0 +1,31 @@
+<!doctype html>
+<!-- Display page: overlays actual and expected bucket counts as bars. Contract: docs/IMPLEMENTATION_PLAN.md § 6.3 -->
+<meta charset="utf-8" />
+<style>
+  body { font: 13px system-ui, sans-serif; color: var(--vscode-foreground, #ccc); background: var(--vscode-editor-background, #1e1e1e); margin: 0; padding: 12px; }
+  .chart { display: flex; align-items: flex-end; gap: 10px; height: 160px; }
+  .bucket { display: flex; gap: 2px; align-items: flex-end; flex: 1; }
+  .bar { flex: 1; min-width: 12px; }
+  .actual { background: #4e9af1; } .expected { background: #f1a54e; opacity: .7; }
+  .legend span { display: inline-block; width: 10px; height: 10px; margin-right: 4px; }
+</style>
+<div class="legend"><span class="actual"></span>actual &nbsp; <span class="expected"></span>expected</div>
+<div class="chart" id="chart"></div>
+<p id="status"></p>
+<script>
+  window.addEventListener("message", ({ data }) => {
+    if (data?.type !== "namespace-tests:result") return;
+    const a = Array.from(data.actual), e = Array.from(data.expected);
+    const max = Math.max(...a, ...e, 1);
+    const chart = document.getElementById("chart");
+    for (let i = 0; i < Math.max(a.length, e.length); i++) {
+      const b = document.createElement("div"); b.className = "bucket"; b.title = `bucket ${i}: actual ${a[i] ?? "–"}, expected ${e[i] ?? "–"}`;
+      for (const [cls, v] of [["actual", a[i] ?? 0], ["expected", e[i] ?? 0]]) {
+        const bar = document.createElement("div"); bar.className = `bar ${cls}`; bar.style.height = `${(v / max) * 100}%`; b.append(bar);
+      }
+      chart.append(b);
+    }
+    document.getElementById("status").textContent = data.passed ? "✓ distributions match" : `✗ ${data.message ?? "distributions differ"}`;
+  });
+  window.parent.postMessage({ type: "namespace-tests:ready" }, "*");
+</script>
