@@ -11,6 +11,6 @@ function slugify(input: string, maxLength = 64): string {
     .slice(0, maxLength);
 }
 
-test("Tests > slugify > Edge[2]", async () => {
-  expect(await slugify("a")).toEqual("a");
+test("Tests > slugify > Edge[2]", () => {
+  expect(slugify("a")).toEqual("a");
 });

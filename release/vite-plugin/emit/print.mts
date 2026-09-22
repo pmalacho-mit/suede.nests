@@ -2,7 +2,7 @@
 // the JavaScript it stands for, each DSL condition maps onto a built-in
 // `expect` matcher, and a test case becomes one top-level `test(…)` with every
 // line anchored to the source line it came from.
-import { children, exprsOf, some } from "./ir.mts";
+import { awaits, children, exprsOf } from "./ir.mts";
 
 import type { Assertion as VitestAssertion } from "vitest";
 import type { Line } from "./context.mts";
@@ -30,7 +30,8 @@ const propKey = (name: string) => (isIdentifier(name) ? name : quote(name));
 
 /** Would this print with an `await` or `new` in front, so a member access needs parentheses? */
 const needsParens = (e: Expr) =>
-  e.kind === "call" || e.kind === "method" || e.kind === "construct";
+  e.kind === "construct" ||
+  ((e.kind === "call" || e.kind === "method") && e.awaited);
 
 const receiver = (e: Expr) =>
   needsParens(e) ? `(${printExpr(e)})` : printExpr(e);
@@ -52,11 +53,11 @@ export function printExpr(e: Expr): string {
     case "name":
       return e.name;
     case "call":
-      return `await ${receiver(e.callee)}(${list(e.args)})`;
+      return `${e.awaited ? "await " : ""}${receiver(e.callee)}(${list(e.args)})`;
     case "construct":
       return `new ${receiver(e.callee)}(${list(e.args)})`;
     case "method":
-      return `await ${receiver(e.receiver)}${member(e.method)}(${list(e.args)})`;
+      return `${e.awaited ? "await " : ""}${receiver(e.receiver)}${member(e.method)}(${list(e.args)})`;
     case "index":
       // `!`: type-level X[0] is never undefined; value-level x[0] may be under noUncheckedIndexedAccess
       return typeof e.key === "number"
@@ -88,7 +89,19 @@ const member = (key: string) =>
   isIdentifier(key) ? `.${key}` : `[${quote(key)}]`;
 
 declare namespace printExpr {
-  type Call = { kind: "call"; callee: { kind: "name"; name: "f" }; args: [] };
+  type Call = {
+    kind: "call";
+    callee: { kind: "name"; name: "f" };
+    args: [];
+    awaited: true;
+  };
+
+  type SyncCall = {
+    kind: "call";
+    callee: { kind: "name"; name: "f" };
+    args: [];
+    awaited: false;
+  };
 
   /** a member of an awaited call is read from the awaited value, not the promise */
   export type Members = Table<
@@ -107,8 +120,53 @@ declare namespace printExpr {
         expected: '(await f())["not-a-name"]',
       ],
       [
-        args: [{ kind: "method"; receiver: Call; method: "m"; args: [] }],
+        args: [
+          {
+            kind: "method";
+            receiver: Call;
+            method: "m";
+            args: [];
+            awaited: true;
+          },
+        ],
         expected: "await (await f()).m()",
+      ],
+    ]
+  >;
+
+  /** a call that returns no promise reads as the call it is: no await, no parentheses */
+  export type Synchronous = Table<
+    typeof printExpr,
+    [
+      [args: [SyncCall], expected: "f()"],
+      [
+        args: [{ kind: "index"; object: SyncCall; key: "x" }],
+        expected: "f().x",
+      ],
+      [
+        args: [
+          {
+            kind: "method";
+            receiver: SyncCall;
+            method: "m";
+            args: [];
+            awaited: false;
+          },
+        ],
+        expected: "f().m()",
+      ],
+      /** one awaited step is enough to parenthesise what follows it */
+      [
+        args: [
+          {
+            kind: "method";
+            receiver: Call;
+            method: "m";
+            args: [];
+            awaited: false;
+          },
+        ],
+        expected: "(await f()).m()",
       ],
     ]
   >;
@@ -219,7 +277,7 @@ const matchers: Record<ConditionName, (a: Assertion, p: Operands) => Chain> = {
   falsy: () => chain("toBeFalsy", []),
   defined: () => chain("toBeDefined", []),
   undefined: () => chain("toBeUndefined", []),
-  throws: (a) => ({ ...throwsChain(a.expected), rejects: true }),
+  throws: (a) => ({ ...throwsChain(a.expected), rejects: rejectsFor(a) }),
   ">": ordering("toBeGreaterThan", ">"),
   ">=": ordering("toBeGreaterThanOrEqual", ">="),
   "<": ordering("toBeLessThan", "<"),
@@ -346,6 +404,19 @@ declare namespace regex {
   >;
 }
 
+/**
+ * Is this `throws` expectation asserted as a *rejected promise* rather than as
+ * a function that throws where it stands?
+ *
+ * An awaited subject has to be, since what it throws arrives as a rejection.
+ * So does a `ThrowsMatcher` literal, whatever the subject: it compiles to a
+ * predicate over the error, and `.rejects` is the only thing that hands the
+ * error to one — `toThrow` takes a class, a message or a pattern, never a
+ * predicate.
+ */
+const rejectsFor = (a: Assertion) =>
+  awaits(a.actual) || throwsChain(a.expected).matcher !== "toThrow";
+
 /** The matcher for a `throws` expectation: nothing, a class or message, or a `ThrowsMatcher` literal. */
 const throwsChain = (expected: Expr | null): Chain => {
   if (!expected || printExpr(expected) === "undefined")
@@ -372,16 +443,13 @@ const throwsChain = (expected: Expr | null): Chain => {
 
 // ── statements ──────────────────────────────────────────────────────────────
 
-const containsAwait = (e: Expr) =>
-  some(e, (n) => n.kind === "call" || n.kind === "method");
-
 /** One assertion, as statements: a hoisted expected value when one is needed, then the `expect`. */
 export function printAssertion(a: Assertion): string[] {
   const { condition: op, display, soft } = a;
   const expectFn = !display && soft ? "expect.soft" : "expect";
   const actual =
     op === "throws"
-      ? `async () => (${printExpr(a.actual)})`
+      ? `${rejectsFor(a) ? "async " : ""}() => (${printExpr(a.actual)})`
       : // typed array vs tuple: compare as plain arrays
         (op === "=" || op === "!=") &&
           a.shape === "typedArray" &&
@@ -393,7 +461,7 @@ export function printAssertion(a: Assertion): string[] {
   // an expected value that awaits cannot sit inside a callback: hoist it
   if (
     a.expected &&
-    containsAwait(a.expected) &&
+    awaits(a.expected) &&
     (display || op === "satisfies" || op === "some" || op === "every")
   ) {
     pre.push(`const expected = ${expected};`);
@@ -426,7 +494,8 @@ const printParam = (p: Param) =>
 
 const printBinding = (b: Binding) =>
   b.params
-    ? `const ${b.name} = async (${b.params.map(printParam).join(", ")}) => ${printExpr(b.value)};`
+    ? // an object literal as an arrow's body reads as a block: parenthesise it
+      `const ${b.name} = ${awaits(b.value) ? "async " : ""}(${b.params.map(printParam).join(", ")}) => ${b.value.kind === "object" ? `(${printExpr(b.value)})` : printExpr(b.value)};`
     : `const ${b.name}${b.annotation ? `: ${b.annotation}` : ""} = ${printExpr(b.value)};`;
 
 // ── tests ───────────────────────────────────────────────────────────────────
@@ -492,6 +561,25 @@ export type EmittedTest = TestCase & {
   needs: Needs;
 };
 
+/**
+ * Does this statement print an `await`? Either something in it is awaited, or
+ * it is a rejection: `.rejects` is awaited however its subject was written.
+ */
+const statementAwaits = (s: Statement) =>
+  exprsOf(s).some(awaits) ||
+  (s.kind === "assert" && s.condition === "throws" && rejectsFor(s));
+
+/**
+ * Does the test have to be an async function? Only if something in it is
+ * awaited: a statement, a `const` binding of its own, or `ntCheck`, which is
+ * always awaited. A generic alias that awaits carries its own `async`, so it
+ * says nothing about the test around it.
+ */
+const isAsync = (t: TestCase, needs: Needs) =>
+  needs.task ||
+  t.bindings.some((b) => !b.params && awaits(b.value)) ||
+  t.body.some(statementAwaits);
+
 export function printTest(t: TestCase): EmittedTest {
   const needs = needsOf(t);
   const doc: Line[] = t.doc
@@ -503,7 +591,7 @@ export function printTest(t: TestCase): EmittedTest {
       : [
           ...doc,
           {
-            code: `${t.mode}(${quote(t.name)}${Object.keys(t.options).length ? `, ${JSON.stringify(t.options)}` : ""}, async (${needs.task ? "{ task }" : ""}) => {`,
+            code: `${t.mode}(${quote(t.name)}${Object.keys(t.options).length ? `, ${JSON.stringify(t.options)}` : ""}, ${isAsync(t, needs) ? "async " : ""}(${needs.task ? "{ task }" : ""}) => {`,
             line: t.line,
           },
           ...t.bindings.map((b) => ({

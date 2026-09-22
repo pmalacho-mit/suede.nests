@@ -18,7 +18,7 @@ function histogram(
 const sumsToTen = (h: Uint32Array) =>
   h.reduce((a, b) => a + b, 0) === 10;
 
-test("Tests > histogram > Sum", async () => {
-  const H = await histogram([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 5, 0, 10);
+test("Tests > histogram > Sum", () => {
+  const H = histogram([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 5, 0, 10);
   expect(H).toSatisfy(sumsToTen);
 });

@@ -31,10 +31,10 @@ class Counter {
 }
 
 /** reset() empties history, and does so on the same array object. */
-test("Tests > Counter > Reset", async () => {
+test("Tests > Counter > Reset", () => {
   const Counter$ = new Counter(10, 2);
-  await Counter$.increment(2);
-  await Counter$.reset();
+  Counter$.increment(2);
+  Counter$.reset();
   expect.soft(Counter$.count).toEqual(0);
   expect.soft(Counter$.history).toHaveLength(0);
   expect.soft(Counter$.history).not.toContain(12);

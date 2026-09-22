@@ -95,7 +95,7 @@ export type Anywhere = Expect<
 ```
 
 ```ts
-expect(await discover(Suite)).toMatchObject([
+expect(discover(Suite)).toMatchObject([
   { name: "parseDate > Iso" },
   { name: "Tests > elsewhere > Deep" },
 ]);

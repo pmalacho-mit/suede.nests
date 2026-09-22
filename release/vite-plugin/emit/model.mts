@@ -4,6 +4,7 @@
 // hands back (see ir.mts) has no syntax left in it.
 import ts from "typescript";
 
+import { awaits } from "./ir.mts";
 import { isCondition } from "./print.mts";
 
 import type { EmitContext } from "./context.mts";
@@ -111,11 +112,25 @@ declare namespace lowerExpr {
     const add = (a: number, b: number) => a + b;
   `;
 
-  /** `Invoke` is the call it stands for, awaited */
+  type AsyncAdd = `
+    const add = async (a: number, b: number) => a + b;
+  `;
+
+  /** `Invoke` is the call it stands for */
   export type Invocation = Expect<
     Invoke<
       typeof harness.printExpression,
       [`${Add}\ntype Subject = Invoke<typeof add, [4, 5]>;`]
+    >,
+    "=",
+    "add(4, 5)"
+  >;
+
+  /** and it is awaited when — and only when — what it returns is thenable */
+  export type AwaitedInvocation = Expect<
+    Invoke<
+      typeof harness.printExpression,
+      [`${AsyncAdd}\ntype Subject = Invoke<typeof add, [4, 5]>;`]
     >,
     "=",
     "await add(4, 5)"
@@ -183,10 +198,22 @@ declare namespace lowerExpr {
   export type AwaitedReceiver = Expect<
     Invoke<
       typeof harness.printExpression,
+      [
+        `${AsyncAdd}type Subject = Call<Invoke<typeof add, [1, 2]>, "toFixed", [1]>;`,
+      ]
+    >,
+    "=",
+    "(await add(1, 2)).toFixed(1)"
+  >;
+
+  /** a receiver that was never awaited needs no parentheses either */
+  export type SynchronousReceiver = Expect<
+    Invoke<
+      typeof harness.printExpression,
       [`${Add}type Subject = Call<Invoke<typeof add, [1, 2]>, "toFixed", [1]>;`]
     >,
     "=",
-    "await (await add(1, 2)).toFixed(1)"
+    "add(1, 2).toFixed(1)"
   >;
 }
 
@@ -200,6 +227,34 @@ export function lowerName(cx: EmitContext, node: ts.EntityName): Expr {
   return left.kind === "name"
     ? { kind: "name", name: `${left.name}.${node.right.text}` }
     : left;
+}
+
+/**
+ * Does calling a value of this type give back a promise? This asks what `await`
+ * itself asks: the awaited type differs from the return type exactly when there
+ * is something to unwrap. A return type of `any` is not one — nothing there
+ * says a promise is coming, and awaiting every untyped call is what this is
+ * here to stop.
+ */
+const returnsThenable = (cx: EmitContext, type: ts.Type | undefined): boolean =>
+  !!type &&
+  type.getCallSignatures().some((signature) => {
+    const returned = signature.getReturnType();
+    return cx.checker.getAwaitedType(returned) !== returned;
+  });
+
+/** What `typeof f` — or whatever else is being called — is. */
+const typeOfCallee = (cx: EmitContext, node: ts.TypeNode) =>
+  cx.checker.getTypeFromTypeNode(node);
+
+/** The type of `receiver.method`, for a `Call`. */
+function typeOfMethod(
+  cx: EmitContext,
+  receiver: ts.TypeNode,
+  method: string,
+): ts.Type | undefined {
+  const property = typeOfCallee(cx, receiver).getProperty(method);
+  return property && cx.checker.getTypeOfSymbolAtLocation(property, receiver);
 }
 
 /** The arity a DSL intrinsic was given too few arguments for. */
@@ -234,21 +289,28 @@ function lowerIntrinsic(
   switch (dsl) {
     case "Invoke":
       return a0 && a1
-        ? { kind: "call", callee: callee(cx, a0), args: args(cx, a1) }
+        ? {
+            kind: "call",
+            callee: callee(cx, a0),
+            args: args(cx, a1),
+            awaited: returnsThenable(cx, typeOfCallee(cx, a0)),
+          }
         : arity(cx, node, 2);
     case "Construct":
       return a0 && a1
         ? { kind: "construct", callee: callee(cx, a0), args: args(cx, a1) }
         : arity(cx, node, 2);
-    case "Call":
-      return a0 && a1 && a2
-        ? {
-            kind: "method",
-            receiver: lowerExpr(cx, a0),
-            method: literalText(cx, a1),
-            args: args(cx, a2),
-          }
-        : arity(cx, node, 3);
+    case "Call": {
+      if (!a0 || !a1 || !a2) return arity(cx, node, 3);
+      const method = literalText(cx, a1);
+      return {
+        kind: "method",
+        receiver: lowerExpr(cx, a0),
+        method,
+        args: args(cx, a2),
+        awaited: returnsThenable(cx, typeOfMethod(cx, a0, method)),
+      };
+    }
     case "Fixture":
       return a1 ? lowerExpr(cx, a1) : arity(cx, node, 2);
     case "Widen":
@@ -309,6 +371,9 @@ function lowerReference(cx: EmitContext, node: ts.TypeReferenceNode): Expr {
           kind: "call",
           callee: name,
           args: (node.typeArguments ?? []).map((a) => lowerExpr(cx, a)),
+          // the alias prints as an arrow, and one is async only if its body
+          // awaits — so calling it is awaited on exactly the same terms
+          awaited: awaits(binding.value),
         }
       : name;
   }
@@ -574,11 +639,25 @@ declare namespace lowerBody {
     const add = (a: number, b: number) => a + b;
   `;
 
+  type AsyncAdd = `
+    const add = async (a: number, b: number) => a + b;
+  `;
+
   /** one `Expect` is one statement */
   export type Assertion_ = Expect<
     Invoke<
       typeof harness.printStatements,
       [`${Add}type Subject = Expect<Invoke<typeof add, [1, 1]>, "=", 2>;`]
+    >,
+    "=",
+    ["expect(add(1, 1)).toEqual(2);"]
+  >;
+
+  /** the same statement over a promise, which is the only reason to await */
+  export type AwaitedAssertion = Expect<
+    Invoke<
+      typeof harness.printStatements,
+      [`${AsyncAdd}type Subject = Expect<Invoke<typeof add, [1, 1]>, "=", 2>;`]
     >,
     "=",
     ["expect(await add(1, 1)).toEqual(2);"]
@@ -593,7 +672,7 @@ declare namespace lowerBody {
       ]
     >,
     "=",
-    ["await add(1, 1);", "expect(1).toBeTruthy();"]
+    ["add(1, 1);", "expect(1).toBeTruthy();"]
   >;
 
   /** a tuple of expectations is soft, so every one of them reports */
@@ -606,14 +685,43 @@ declare namespace lowerBody {
     ["expect.soft(1).toEqual(1);", "expect.soft(2).toEqual(2);"]
   >;
 
-  /** `Throws` awaits the rejection of a thunk */
+  /** `Throws` on a synchronous call asserts on the call where it stands */
   export type Rejection = Expect<
     Invoke<
       typeof harness.printStatements,
       [`${Add}type Subject = Throws<Invoke<typeof add, [1, 1]>, RangeError>;`]
     >,
     "=",
+    ["expect(() => (add(1, 1))).toThrow(RangeError);"]
+  >;
+
+  /** an awaited one throws as a rejection, so that is what is asserted */
+  export type AwaitedRejection = Expect<
+    Invoke<
+      typeof harness.printStatements,
+      [
+        `${AsyncAdd}type Subject = Throws<Invoke<typeof add, [1, 1]>, RangeError>;`,
+      ]
+    >,
+    "=",
     ["await expect(async () => (await add(1, 1))).rejects.toThrow(RangeError);"]
+  >;
+
+  /**
+   * …and so does a matcher literal, whatever it is thrown from: it compiles to
+   * a predicate over the error, and only `.rejects` hands the error to one
+   */
+  export type MatcherRejection = Expect<
+    Invoke<
+      typeof harness.printStatements,
+      [
+        `${Add}type Subject = Throws<Invoke<typeof add, [1, 1]>, { message: "no" }>;`,
+      ]
+    >,
+    "=",
+    [
+      'await expect(async () => (add(1, 1))).rejects.toSatisfy((err) => String(err.message).includes("no"));',
+    ]
   >;
 
   /** what is not a test says so where it was written, and fails when run */
@@ -793,6 +901,7 @@ function tableCases(
         kind: "call",
         callee: callee(cx, fnNode),
         args: args(cx, argsNode),
+        awaited: returnsThenable(cx, typeOfCallee(cx, fnNode)),
       },
       type: returnTypeOf(cx, fnNode),
     };
@@ -890,14 +999,31 @@ declare namespace lowerAlias {
   export type Simple = Expect<
     Invoke<typeof harness.printAlias, [Suite, "Simple"]>,
     "=",
-    '/** four plus five */\ntest("add > Simple", async () => {\n  expect(await add(4, 5)).toEqual(9);\n});'
+    '/** four plus five */\ntest("add > Simple", () => {\n  expect(add(4, 5)).toEqual(9);\n});'
+  >;
+
+  type AsyncSuite = `
+    const load = async (id: string) => id;
+    declare namespace load {
+      export type One = Expect<Invoke<typeof load, ["a"]>, "=", "a">;
+    }
+  `;
+
+  /**
+   * …and it is an async function only when something in it is awaited, which
+   * `Simple` above shows is not the usual case
+   */
+  export type Awaited_ = Expect<
+    Invoke<typeof harness.printAlias, [AsyncSuite, "One"]>,
+    "=",
+    'test("load > One", async () => {\n  expect(await load("a")).toEqual("a");\n});'
   >;
 
   /** a table row is a test of its own, indexed by row */
   export type TableRow = Expect<
     Invoke<typeof harness.printAlias, [Suite, "Rows"]>,
     "=",
-    'test("add > Rows[0]", async () => {\n  expect(await add(1, 1)).toEqual(2);\n});'
+    'test("add > Rows[0]", () => {\n  expect(add(1, 1)).toEqual(2);\n});'
   >;
 
   /** `Todo` has no body at all */
@@ -925,6 +1051,6 @@ declare namespace lowerAlias {
   export type Configured = Expect<
     Invoke<typeof harness.printAlias, [Suite, "Slow"]>,
     "startsWith",
-    'test("add > Slow", {"timeout":50,"retry":2}, async () => {'
+    'test("add > Slow", {"timeout":50,"retry":2}, () => {'
   >;
 }

@@ -28,6 +28,6 @@ function evaluate(e: Expr): number {
   }
 }
 
-test("Tests > evaluate > Cases[3]", async () => {
-  await expect(async () => (await evaluate({ kind: "bin", op: "/", left: { kind: "num", value: 1 }, right: { kind: "num", value: 0 } }))).rejects.toThrow(RangeError);
+test("Tests > evaluate > Cases[3]", () => {
+  expect(() => (evaluate({ kind: "bin", op: "/", left: { kind: "num", value: 1 }, right: { kind: "num", value: 0 } }))).toThrow(RangeError);
 });

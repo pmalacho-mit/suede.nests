@@ -12,6 +12,6 @@ function slugify(input: string, maxLength = 64): string {
 }
 
 /** Output only ever contains lowercase letters, digits and dashes. */
-test("Tests > slugify > Charset", async () => {
-  expect(await slugify("  Ünïcode & symbols ~~ 42 ")).toMatch(new RegExp("^[a-z0-9-]*$"));
+test("Tests > slugify > Charset", () => {
+  expect(slugify("  Ünïcode & symbols ~~ 42 ")).toMatch(new RegExp("^[a-z0-9-]*$"));
 });

@@ -30,7 +30,7 @@ class Counter {
   }
 }
 
-test("Tests > Counter > InitialState", async () => {
+test("Tests > Counter > InitialState", () => {
   const Counter$ = new Counter(10, 2);
   expect.soft(Counter$.count).toEqual(10);
   expect.soft(Counter$.history).toHaveLength(0);

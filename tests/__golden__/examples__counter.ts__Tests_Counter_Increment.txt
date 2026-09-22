@@ -31,9 +31,9 @@ class Counter {
 }
 
 /** increment() advances by `step` and records history. */
-test("Tests > Counter > Increment", async () => {
+test("Tests > Counter > Increment", () => {
   const Counter$ = new Counter(10, 2);
-  await Counter$.increment(3);
+  Counter$.increment(3);
   expect.soft(Counter$.count).toEqual(16);
   expect.soft(Counter$.history).toEqual([12, 14, 16]);
 });

@@ -5,9 +5,9 @@ function mean(xs: ArrayLike<number>): number {
   return Array.from(xs).reduce((a, b) => a + b, 0) / xs.length;
 }
 
-test("Tests > mean > Bounded", async () => {
+test("Tests > mean > Bounded", () => {
   const Sample = [2, 4, 4, 4, 5, 5, 7, 9];
-  expect.soft(await mean(Sample)).toBeGreaterThanOrEqual(2);
-  expect.soft(await mean(Sample)).toBeLessThanOrEqual(9);
-  expect.soft(await mean(Sample)).toSatisfy(Number.isFinite);
+  expect.soft(mean(Sample)).toBeGreaterThanOrEqual(2);
+  expect.soft(mean(Sample)).toBeLessThanOrEqual(9);
+  expect.soft(mean(Sample)).toSatisfy(Number.isFinite);
 });

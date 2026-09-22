@@ -72,16 +72,28 @@
  *   `Container` above is a fresh object for every test that mentions it.
  *
  * - **Only referenced aliases are evaluated, in dependency order.** Each test
- *   becomes an ordinary async test function whose first statements are
- *   `const` bindings for the aliases it (transitively) references, followed by
- *   the effects and assertions in source order. Generic aliases
+ *   becomes an ordinary test function whose first statements are `const`
+ *   bindings for the aliases it (transitively) references, followed by the
+ *   effects and assertions in source order. Generic aliases
  *   (`type Parsed<S> = Invoke<typeof parse, [S]>`) become functions.
  *
  * - **Indexed access reads a property.** `Result["name"]`, `Bytes["length"]`,
  *   `Rows[0]["id"]` read the property from the materialized value.
  *
- * - **Promises are awaited.** `Invoke`, `Construct` and `Call` await the result
- *   if it is thenable.
+ * - **Promises are awaited, and nothing else is.** `Invoke` and `Call` await
+ *   what they evaluate to when the function or method returns something
+ *   thenable — and print the plain call when it does not. So a test over
+ *   synchronous code is a synchronous test, and reads as one:
+ *
+ *   ```ts
+ *   test("slugify > Basic", () => {
+ *     expect(slugify("Hello, World!")).toEqual("hello-world");
+ *   });
+ *   ```
+ *
+ *   A function typed as returning `any` is taken at its word: nothing there
+ *   says a promise is coming, so nothing is awaited. Type it as returning a
+ *   promise and it will be.
  */
 
 // ═══════════════════════════════════════════════════════════════════════════

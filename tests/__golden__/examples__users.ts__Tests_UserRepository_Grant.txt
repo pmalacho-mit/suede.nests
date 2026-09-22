@@ -68,6 +68,5 @@ test("Tests > UserRepository > Grant", async () => {
   expect.soft(Ada.roles).toEqual(["admin"]);
   expect.soft(Ada).toSatisfy(isAdmin);
   expect.soft(await Repo.list()).toSatisfy((xs: ArrayLike<any>) => Array.from(xs).some(isAdmin));
-  const expected = await hasEmailDomain("example.com");
-  expect.soft(await Repo.list()).toSatisfy((xs: ArrayLike<any>) => Array.from(xs).every(expected));
+  expect.soft(await Repo.list()).toSatisfy((xs: ArrayLike<any>) => Array.from(xs).every(hasEmailDomain("example.com")));
 });

@@ -2,6 +2,6 @@ import { test, expect } from "vitest";
 
 const add = (a: number, b: number, c = 0) => a + b + c;
 
-test("Tests > wrong > OffByOne", async () => {
-  expect(await add(4, 5)).toEqual(10);
+test("Tests > wrong > OffByOne", () => {
+  expect(add(4, 5)).toEqual(10);
 });

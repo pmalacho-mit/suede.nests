@@ -2,7 +2,7 @@ import { test, expect } from "vitest";
 
 import { conversionCount, formatCents } from "./lib/money.ts";
 
-test("Tests > cart > IsolatedSecond", async () => {
-  await formatCents(2);
-  expect(await conversionCount()).toEqual(1);
+test("Tests > cart > IsolatedSecond", () => {
+  formatCents(2);
+  expect(conversionCount()).toEqual(1);
 });

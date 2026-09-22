@@ -15,6 +15,6 @@ function histogram(
   return out;
 }
 
-test("Tests > histogram > Clamps", async () => {
-  expect(Array.from(await histogram([-100, 100], 2, 0, 10))).toEqual([1, 1]);
+test("Tests > histogram > Clamps", () => {
+  expect(Array.from(histogram([-100, 100], 2, 0, 10))).toEqual([1, 1]);
 });

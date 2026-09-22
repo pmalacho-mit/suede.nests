@@ -31,7 +31,7 @@ class Counter {
 }
 
 /** increment() is chainable — it returns the same instance. */
-test("Tests > Counter > Chainable", async () => {
+test("Tests > Counter > Chainable", () => {
   const Counter$ = new Counter(10, 2);
-  expect(await Counter$.increment()).toBe(Counter$);
+  expect(Counter$.increment()).toBe(Counter$);
 });

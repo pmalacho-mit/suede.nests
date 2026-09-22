@@ -39,9 +39,9 @@ function reduce(state: State, action: Action): State {
   }
 }
 
-test("Tests > reduce > Add", async () => {
+test("Tests > reduce > Add", () => {
   const Empty: State = { todos: [], filter: "all" };
-  const One = await reduce(Empty, { type: "add", id: 1n, text: "buy milk" });
+  const One = reduce(Empty, { type: "add", id: 1n, text: "buy milk" });
   expect.soft(One.todos).toEqual([{ id: 1n, text: "buy milk", done: false, due: null }]);
   expect.soft(One.todos[0]!.due).toEqual(null);
   expect.soft(One.todos[0]!.id).toEqual(1n);

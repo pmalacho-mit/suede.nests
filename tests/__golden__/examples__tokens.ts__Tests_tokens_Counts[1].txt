@@ -9,6 +9,6 @@ function statementCount(source: string): number {
 }
 
 /** a package import is shared, not copied, so this is the real TypeScript */
-test("Tests > tokens > Counts[1]", async () => {
-  expect(await statementCount("const a = 1;\nconst b = 2;")).toEqual(2);
+test("Tests > tokens > Counts[1]", () => {
+  expect(statementCount("const a = 1;\nconst b = 2;")).toEqual(2);
 });

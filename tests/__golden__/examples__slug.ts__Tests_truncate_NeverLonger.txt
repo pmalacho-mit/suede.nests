@@ -5,6 +5,6 @@ function truncate(input: string, max: number, ellipsis = "…"): string {
   return input.slice(0, Math.max(0, max - ellipsis.length)) + ellipsis;
 }
 
-test("Tests > truncate > NeverLonger", async () => {
-  expect((await truncate("hello world", 8)).length).toBeLessThanOrEqual(8);
+test("Tests > truncate > NeverLonger", () => {
+  expect(truncate("hello world", 8).length).toBeLessThanOrEqual(8);
 });

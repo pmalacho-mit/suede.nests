@@ -71,6 +71,6 @@ function parse(src: string): Expr {
   return result;
 }
 
-test("Tests > parse > Negation", async () => {
-  expect(await parse("-5")).toMatchObject({ kind: "neg", expr: { value: 5 } });
+test("Tests > parse > Negation", () => {
+  expect(parse("-5")).toMatchObject({ kind: "neg", expr: { value: 5 } });
 });

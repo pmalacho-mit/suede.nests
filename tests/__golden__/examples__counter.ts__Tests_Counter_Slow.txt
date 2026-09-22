@@ -30,7 +30,7 @@ class Counter {
   }
 }
 
-test("Tests > Counter > Slow", {"timeout":50}, async () => {
+test("Tests > Counter > Slow", {"timeout":50}, () => {
   const Counter$ = new Counter(10, 2);
-  expect((await Counter$.increment(1000)).count).toEqual(2010);
+  expect(Counter$.increment(1000).count).toEqual(2010);
 });

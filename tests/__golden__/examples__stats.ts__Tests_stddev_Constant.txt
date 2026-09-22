@@ -10,6 +10,6 @@ function stddev(xs: readonly number[]): number {
   return Math.sqrt(mean(xs.map((x) => (x - m) ** 2)));
 }
 
-test("Tests > stddev > Constant", async () => {
-  expect(await stddev([3, 3, 3])).toEqual(0);
+test("Tests > stddev > Constant", () => {
+  expect(stddev([3, 3, 3])).toEqual(0);
 });

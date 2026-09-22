@@ -39,8 +39,8 @@ function reduce(state: State, action: Action): State {
   }
 }
 
-test("Tests > reduce > ToggleUnknownIsNoop", async () => {
+test("Tests > reduce > ToggleUnknownIsNoop", () => {
   const Empty: State = { todos: [], filter: "all" };
-  const One = await reduce(Empty, { type: "add", id: 1n, text: "buy milk" });
-  expect((await reduce(One, { type: "toggle", id: 2n })).todos).toEqual(One.todos);
+  const One = reduce(Empty, { type: "add", id: 1n, text: "buy milk" });
+  expect(reduce(One, { type: "toggle", id: 2n }).todos).toEqual(One.todos);
 });

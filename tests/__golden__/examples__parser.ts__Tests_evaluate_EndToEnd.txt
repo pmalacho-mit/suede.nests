@@ -93,9 +93,9 @@ function evaluate(e: Expr): number {
 }
 
 /** End-to-end: generic aliases are just macros — `Parsed<"...">` expands at each use. */
-test("Tests > evaluate > EndToEnd", async () => {
-  const Parsed = async (S: string) => await parse(S);
-  expect.soft(await evaluate(await Parsed("2 * (3 + 4)"))).toEqual(14);
-  expect.soft(await evaluate(await Parsed("-(1 - 3)"))).toEqual(2);
-  expect.soft(await evaluate(await Parsed("10 / 4"))).toEqual(2.5);
+test("Tests > evaluate > EndToEnd", () => {
+  const Parsed = (S: string) => parse(S);
+  expect.soft(evaluate(Parsed("2 * (3 + 4)"))).toEqual(14);
+  expect.soft(evaluate(Parsed("-(1 - 3)"))).toEqual(2);
+  expect.soft(evaluate(Parsed("10 / 4"))).toEqual(2.5);
 });

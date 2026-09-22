@@ -30,6 +30,6 @@ class Counter {
   }
 }
 
-test("Tests > Counter > RejectsFractionalInitial", async () => {
-  await expect(async () => (new Counter(1.5))).rejects.toThrow(RangeError);
+test("Tests > Counter > RejectsFractionalInitial", () => {
+  expect(() => (new Counter(1.5))).toThrow(RangeError);
 });

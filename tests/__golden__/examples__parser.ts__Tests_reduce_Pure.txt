@@ -40,9 +40,9 @@ function reduce(state: State, action: Action): State {
 }
 
 /** Reducers are pure: the input state is untouched and the output is a new object. */
-test("Tests > reduce > Pure", async () => {
+test("Tests > reduce > Pure", () => {
   const Empty: State = { todos: [], filter: "all" };
-  const One = await reduce(Empty, { type: "add", id: 1n, text: "buy milk" });
+  const One = reduce(Empty, { type: "add", id: 1n, text: "buy milk" });
   One;
   expect.soft(Empty.todos).toHaveLength(0);
   expect.soft(One).not.toBe(Empty);

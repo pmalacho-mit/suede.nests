@@ -3,7 +3,7 @@ import { test, expect } from "vitest";
 import { conversionCount, formatCents } from "./lib/money.ts";
 
 /** Each test gets its own copy of `./lib/money.ts`, so the count this test sees is its own. Both of these pass only because the import is isolated. */
-test("Tests > cart > IsolatedFirst", async () => {
-  await formatCents(1);
-  expect(await conversionCount()).toEqual(1);
+test("Tests > cart > IsolatedFirst", () => {
+  formatCents(1);
+  expect(conversionCount()).toEqual(1);
 });

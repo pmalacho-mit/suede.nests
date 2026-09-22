@@ -11,8 +11,8 @@ function slugify(input: string, maxLength = 64): string {
     .slice(0, maxLength);
 }
 
-test("Tests > slugify > NoLeadingOrTrailingDash", async () => {
-  expect.soft(await slugify("--foo--")).toSatisfy((s: string) => s.startsWith("f"));
-  expect.soft(await slugify("--foo--")).toSatisfy((s: string) => s.endsWith("o"));
-  expect.soft(await slugify("--foo--")).not.toContain("--");
+test("Tests > slugify > NoLeadingOrTrailingDash", () => {
+  expect.soft(slugify("--foo--")).toSatisfy((s: string) => s.startsWith("f"));
+  expect.soft(slugify("--foo--")).toSatisfy((s: string) => s.endsWith("o"));
+  expect.soft(slugify("--foo--")).not.toContain("--");
 });

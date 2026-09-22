@@ -20,9 +20,9 @@ class Cart {
 }
 
 /** the imported module is reached through the class under test */
-test("Tests > cart > Receipt", async () => {
+test("Tests > cart > Receipt", () => {
   const Cart$ = new Cart();
-  await Cart$.add(1099);
-  await Cart$.add(250);
-  expect(await Cart$.receipt()).toEqual("$13.49");
+  Cart$.add(1099);
+  Cart$.add(250);
+  expect(Cart$.receipt()).toEqual("$13.49");
 });

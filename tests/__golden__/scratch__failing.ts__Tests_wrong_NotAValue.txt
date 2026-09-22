@@ -3,6 +3,6 @@ const nt_unsupported = (t: string) => { throw new Error(`namespace-tests: cannot
 
 const add = (a: number, b: number, c = 0) => a + b + c;
 
-test("Tests > wrong > NotAValue", async () => {
-  expect(await add(1_000_000, 2_000_000, 30)).toEqual(nt_unsupported("number"));
+test("Tests > wrong > NotAValue", () => {
+  expect(add(1_000_000, 2_000_000, 30)).toEqual(nt_unsupported("number"));
 });

@@ -25,12 +25,15 @@ export type Expr =
   | { kind: "object"; entries: [key: string, value: Expr][] }
   /** A value in scope, as written: `add`, `user.getName`, `dsl$.x`. */
   | { kind: "name"; name: string }
-  /** `Invoke`, or a generic alias applied to arguments: `await f(…)`. */
-  | { kind: "call"; callee: Expr; args: Expr[] }
-  /** `Construct`: `new C(…)`. */
+  /**
+   * `Invoke`, or a generic alias applied to arguments: `f(…)`. `awaited` when
+   * what it returns is thenable — only then is there a promise to unwrap.
+   */
+  | { kind: "call"; callee: Expr; args: Expr[]; awaited: boolean }
+  /** `Construct`: `new C(…)`. A constructor cannot be async, so never awaited. */
   | { kind: "construct"; callee: Expr; args: Expr[] }
-  /** `Call`: `await receiver.method(…)`. */
-  | { kind: "method"; receiver: Expr; method: string; args: Expr[] }
+  /** `Call`: `receiver.method(…)`, awaited on the same terms as a call. */
+  | { kind: "method"; receiver: Expr; method: string; args: Expr[]; awaited: boolean }
   /** `X["key"]`, `X[0]`. */
   | { kind: "index"; object: Expr; key: string | number }
   /** `FromFile`. */
@@ -152,6 +155,14 @@ export const children = (e: Expr): Expr[] => {
 /** Does any node of the expression satisfy `test`? */
 export const some = (e: Expr, test: (e: Expr) => boolean): boolean =>
   test(e) || children(e).some((c) => some(c, test));
+
+/**
+ * Does evaluating this expression await anything? What holds it — a test, an
+ * alias turned function, a thunk that must throw — has to be `async` exactly
+ * when this is true, and not a line sooner.
+ */
+export const awaits = (e: Expr): boolean =>
+  some(e, (n) => (n.kind === "call" || n.kind === "method") && n.awaited);
 
 /** The expressions a statement evaluates. */
 export const exprsOf = (s: Statement): Expr[] =>

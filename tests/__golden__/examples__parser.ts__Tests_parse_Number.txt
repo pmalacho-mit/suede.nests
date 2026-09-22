@@ -71,6 +71,6 @@ function parse(src: string): Expr {
   return result;
 }
 
-test("Tests > parse > Number", async () => {
-  expect(await parse("42")).toEqual({ kind: "num", value: 42 });
+test("Tests > parse > Number", () => {
+  expect(parse("42")).toEqual({ kind: "num", value: 42 });
 });

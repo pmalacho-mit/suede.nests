@@ -30,7 +30,7 @@ class Counter {
   }
 }
 
-test("Tests > Counter > Instance", async () => {
+test("Tests > Counter > Instance", () => {
   const Counter$ = new Counter(10, 2);
   expect(Counter$).toBeInstanceOf(Counter);
 });

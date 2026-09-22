@@ -5,6 +5,6 @@ function mean(xs: ArrayLike<number>): number {
   return Array.from(xs).reduce((a, b) => a + b, 0) / xs.length;
 }
 
-test("Tests > mean > Empty", async () => {
-  expect(await mean([])).toBeNaN();
+test("Tests > mean > Empty", () => {
+  expect(mean([])).toBeNaN();
 });

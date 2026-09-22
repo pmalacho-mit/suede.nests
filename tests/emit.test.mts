@@ -48,6 +48,7 @@ describe("expressions", () => {
     expect(cx.test.order.map((b) => b.name)).toEqual(["Inner", "Outer"]);
     expect(cx.test.order[1]?.value).toEqual({
       kind: "call",
+      awaited: false,
       callee: { kind: "name", name: "add" },
       args: [
         { kind: "name", name: "Inner" },
@@ -69,7 +70,7 @@ describe("expressions", () => {
     // the reference leaves `Root` out, so the call does too — the parameter has
     // to carry the default the type parameter declared, or `key` is called with
     // one argument less than it was written to take
-    expect(printExpr(lowerExpr(cx, type("Ref")))).toBe('await Key("a.ts")');
+    expect(printExpr(lowerExpr(cx, type("Ref")))).toBe('Key("a.ts")');
     expect(cx.test.order[0]?.params).toEqual([
       { name: "Source", type: "string", fallback: null },
       {
@@ -80,7 +81,28 @@ describe("expressions", () => {
     ]);
     const [emitted] = lowerAlias(cx, alias("Same"), ["key"]).map(printTest);
     expect(emitted?.code).toContain(
-      "const Key = async (Source: string, Root: string | undefined = undefined) =>",
+      "const Key = (Source: string, Root: string | undefined = undefined) =>",
+    );
+  });
+
+  test("an alias over an async function is async, and calling it awaits", () => {
+    const { cx, alias } = contextFor(`
+      const load = async (id: string) => ({ id });
+      declare namespace load {
+        type Loaded<Id extends string> = Invoke<typeof load, [Id]>;
+        export type Roundtrip = Expect<Loaded<"a">["id"], "=", "a">;
+      }
+    `);
+    const [emitted] = lowerAlias(cx, alias("Roundtrip"), ["load"]).map(printTest);
+    // the arrow awaits, so calling it gives back a promise — and the member is
+    // read from what that promise resolved to, not from the promise
+    expect(emitted?.code).toBe(
+      [
+        'test("load > Roundtrip", async () => {',
+        "  const Loaded = async (Id: string) => await load(Id);",
+        '  expect((await Loaded("a")).id).toEqual("a");',
+        "});",
+      ].join("\n"),
     );
   });
 
@@ -117,7 +139,7 @@ describe("assertions", () => {
     const [statement] = lowerBody(cx, type("Subject"), false);
     expect(statement).toMatchObject({ kind: "assert", shape: "typedArray" });
     expect(printStatement(statement!)).toEqual([
-      "expect(Array.from(await bytes())).toEqual([1, 2]);",
+      "expect(Array.from(bytes())).toEqual([1, 2]);",
     ]);
   });
 
@@ -132,7 +154,7 @@ describe("assertions", () => {
       display: { page: "./page.html", meta: null },
     });
     expect(printStatement(statement!)).toEqual([
-      `await ntCheck(task, { display: "./page.html", meta: undefined, soft: false }, async () => await add(4, 5), 9, (actual) => expect(actual).toEqual(9));`,
+      `await ntCheck(task, { display: "./page.html", meta: undefined, soft: false }, async () => add(4, 5), 9, (actual) => expect(actual).toEqual(9));`,
     ]);
     expect(lowerBody(cx, type("Full"), false)[0]).toMatchObject({
       display: { page: "./page.html", meta: { kind: "object" } },
@@ -147,10 +169,7 @@ describe("assertions", () => {
     `);
     expect(
       lowerBody(cx, type("Subject"), false).flatMap(printStatement),
-    ).toEqual([
-      "const expected = await pred(1);",
-      "expect(await add(1, 2)).toSatisfy(expected);",
-    ]);
+    ).toEqual(["expect(add(1, 2)).toSatisfy(pred(1));"]);
   });
 
   test("a string that merely mentions await is not hoisted", () => {
@@ -173,13 +192,16 @@ describe("assertions", () => {
     const printed = (alias: string) =>
       lowerBody(cx, type(alias), false).flatMap(printStatement)[0];
     expect(printed("Class")).toBe(
-      "await expect(async () => (await boom())).rejects.toThrow(RangeError);",
+      "expect(() => (boom())).toThrow(RangeError);",
     );
+    // a matcher literal is a predicate over the error, and `.rejects` is the
+    // only thing that hands one the error — so even a synchronous subject is
+    // asserted as a rejection
     expect(printed("Matcher")).toBe(
-      'await expect(async () => (await boom())).rejects.toSatisfy((err) => err instanceof RangeError && String(err.message).includes("boom"));',
+      'await expect(async () => (boom())).rejects.toSatisfy((err) => err instanceof RangeError && String(err.message).includes("boom"));',
     );
     expect(printed("Pattern")).toBe(
-      "await expect(async () => (await boom())).rejects.toSatisfy((err) => /bo+m/.test(String(err.message)));",
+      "await expect(async () => (boom())).rejects.toSatisfy((err) => /bo+m/.test(String(err.message)));",
     );
   });
 

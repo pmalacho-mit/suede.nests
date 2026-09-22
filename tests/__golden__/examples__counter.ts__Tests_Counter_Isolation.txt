@@ -31,7 +31,7 @@ class Counter {
 }
 
 /** Each test gets a fresh instance: `Increment` above did not leak into this one. */
-test("Tests > Counter > Isolation", async () => {
+test("Tests > Counter > Isolation", () => {
   const Counter$ = new Counter(10, 2);
   expect(Counter$.count).toEqual(10);
 });

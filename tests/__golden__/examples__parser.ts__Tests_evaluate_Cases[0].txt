@@ -28,6 +28,6 @@ function evaluate(e: Expr): number {
   }
 }
 
-test("Tests > evaluate > Cases[0]", async () => {
-  expect(await evaluate({ kind: "num", value: -1 })).toEqual(-1);
+test("Tests > evaluate > Cases[0]", () => {
+  expect(evaluate({ kind: "num", value: -1 })).toEqual(-1);
 });

@@ -11,6 +11,6 @@ function slugify(input: string, maxLength = 64): string {
     .slice(0, maxLength);
 }
 
-test("Tests > slugify > Ordering", async () => {
-  expect(await slugify("b") > "a").toBe(true);
+test("Tests > slugify > Ordering", () => {
+  expect(slugify("b") > "a").toBe(true);
 });

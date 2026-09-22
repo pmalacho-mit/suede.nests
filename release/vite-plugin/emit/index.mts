@@ -158,7 +158,7 @@ declare namespace emitTests {
   export type Rendered = Expect<
     Invoke<typeof printModule, [Suite]>,
     "includes",
-    'test("other > nested > Deep", async () => {'
+    'test("other > nested > Deep", () => {'
   >;
 
   /** a file with no test namespace emits nothing at all */

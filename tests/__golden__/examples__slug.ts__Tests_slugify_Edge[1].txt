@@ -11,6 +11,6 @@ function slugify(input: string, maxLength = 64): string {
     .slice(0, maxLength);
 }
 
-test("Tests > slugify > Edge[1]", async () => {
-  expect(await slugify("!!!")).toHaveLength(0);
+test("Tests > slugify > Edge[1]", () => {
+  expect(slugify("!!!")).toHaveLength(0);
 });

@@ -7,7 +7,8 @@ test("prints one test as an ordinary Vitest file, pruned to what it needs", () =
   const src = minimalFor("examples/counter.ts", "Reset");
   // imports first, then the code the test needs, then the test itself
   expect(src.startsWith('import { test, expect } from "vitest";')).toBe(true);
-  expect(src).toContain('test("Tests > Counter > Reset", async () => {');
+  // nothing in this test awaits, so it is an ordinary synchronous test
+  expect(src).toContain('test("Tests > Counter > Reset", () => {');
   // the test body, de-indented and with the class it exercises kept
   expect(src).toContain("class Counter");
   expect(src.trimEnd().endsWith("});")).toBe(true);

@@ -16,7 +16,7 @@ function normalize(xs: readonly number[]): Float64Array {
   return Float64Array.from(xs, (x) => (x - m) / s);
 }
 
-test("Tests > normalize > ZeroMean", async () => {
-  const N = await normalize([1, 2, 3]);
-  expect(Math.abs(await mean(N) - 0)).toBeLessThanOrEqual(1e-12);
+test("Tests > normalize > ZeroMean", () => {
+  const N = normalize([1, 2, 3]);
+  expect(Math.abs(mean(N) - 0)).toBeLessThanOrEqual(1e-12);
 });

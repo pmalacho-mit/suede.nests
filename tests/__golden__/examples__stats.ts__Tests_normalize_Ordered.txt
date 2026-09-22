@@ -17,7 +17,7 @@ function normalize(xs: readonly number[]): Float64Array {
 }
 const isFinite = (x: number) => Number.isFinite(x);
 
-test("Tests > normalize > Ordered", async () => {
-  const N = await normalize([1, 2, 3]);
+test("Tests > normalize > Ordered", () => {
+  const N = normalize([1, 2, 3]);
   expect(N).toSatisfy((xs: ArrayLike<any>) => Array.from(xs).every(isFinite));
 });

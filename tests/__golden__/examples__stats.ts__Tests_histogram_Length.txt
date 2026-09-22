@@ -15,7 +15,7 @@ function histogram(
   return out;
 }
 
-test("Tests > histogram > Length", async () => {
-  const H = await histogram([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 5, 0, 10);
+test("Tests > histogram > Length", () => {
+  const H = histogram([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 5, 0, 10);
   expect(H.length).toEqual(5);
 });

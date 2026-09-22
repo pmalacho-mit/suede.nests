@@ -39,7 +39,7 @@ function reduce(state: State, action: Action): State {
   }
 }
 
-test("Tests > reduce > Filter", async () => {
+test("Tests > reduce > Filter", () => {
   const Empty: State = { todos: [], filter: "all" };
-  expect((await reduce(Empty, { type: "filter", filter: "done" })).filter).toEqual("done");
+  expect(reduce(Empty, { type: "filter", filter: "done" }).filter).toEqual("done");
 });
