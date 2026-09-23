@@ -2,7 +2,7 @@ import { test, expect } from "vitest";
 
 import { formatCents } from "./lib/money.ts";
 
-test("Tests > cart > Negative", () => {
+test("formatCents > Negative", () => {
   const actual = formatCents(-5);
   const expected = "-$0.05";
   expect(actual).toEqual(expected);

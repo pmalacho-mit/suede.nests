@@ -2,8 +2,7 @@ import { test, expect } from "vitest";
 
 import { formatCents } from "./lib/money.ts";
 
-/** a first-party import is used exactly as the module uses it */
-test("Tests > cart > Formats", () => {
+test("formatCents > Formats", () => {
   const actual = formatCents(1234);
   const expected = "$12.34";
   expect(actual).toEqual(expected);

@@ -20,7 +20,7 @@ class Cart {
 }
 
 /** the imported module is reached through the class under test */
-test("Tests > cart > Receipt", () => {
+test("Cart > Receipt", () => {
   const Cart$ = new Cart();
   Cart$.add(1099);
   Cart$.add(250);

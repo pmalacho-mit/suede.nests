@@ -498,7 +498,7 @@ declare namespace minimalFor {
 
   type Formats = Invoke<
     typeof minimalFor,
-    [file: "examples/cart.ts", test: "Tests > cart > Formats"]
+    [file: "examples/cart.ts", test: "formatCents > Formats"]
   >;
 
   /** an import brings in only what the test reaches */
@@ -515,7 +515,7 @@ declare namespace minimalFor {
   export type KeepsUsed = Expect<
     Invoke<
       typeof minimalFor,
-      [file: "examples/cart.ts", test: "Tests > cart > IsolatedFirst"]
+      [file: "examples/cart.ts", test: "Isolation > IsolatedFirst"]
     >,
     "includes",
     'import { conversionCount, formatCents } from "./lib/money.ts";'
