@@ -17,8 +17,19 @@ import { SUFFIX, extract, extracted, tempPathFor } from "./extract.js";
 import { explain } from "./failure.js";
 
 const ID = "namespace-tests";
-/** Where the plugin leaves what it learned at transform time. */
-const SIDECAR = ".namespace-tests";
+
+/**
+ * Everything the library derives from your source lives in its own folder, not
+ * in the project. `null` when there is no library to ask.
+ */
+const DERIVED = ".derived";
+
+/** Where Node keeps the compiled form of what these commands load. */
+let compiledModules: string | undefined;
+const derivedIn = (folder: string) => {
+  const library = findLibrary(folder);
+  return library ? path.join(library.root, DERIVED) : null;
+};
 
 type Outcome =
   | { state: "running" }
@@ -27,6 +38,10 @@ type Outcome =
   | { state: "failed"; message: string };
 
 export function activate(context: vscode.ExtensionContext): void {
+  // Node's compiled-module cache goes in this extension's own storage, not in
+  // anyone's repository: it belongs to this extension's copy of nothing in
+  // particular, and leaving files in a project that no one asked for is rude.
+  compiledModules = path.join(context.globalStorageUri.fsPath, "node");
   const controller = vscode.tests.createTestController(ID, "Namespace Tests");
   const diagnostics = vscode.languages.createDiagnosticCollection(ID);
   const output = vscode.window.createOutputChannel("Namespace Tests");
@@ -384,7 +399,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // ── what the printer could not materialise ──────────────────────────────
   const publishDiagnostics = (folder: vscode.WorkspaceFolder) => {
-    const file = path.join(folder.uri.fsPath, SIDECAR, "diagnostics.json");
+    const derived = derivedIn(folder.uri.fsPath);
+    if (!derived) return;
+    const file = path.join(derived, "diagnostics.json");
     if (!fs.existsSync(file)) return;
     let byFile: Record<string, Warning[]>;
     try {
@@ -409,8 +426,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
   for (const folder of vscode.workspace.workspaceFolders ?? []) {
     publishDiagnostics(folder);
+    const derived = derivedIn(folder.uri.fsPath);
+    if (!derived) continue;
     const watcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(folder, `${SIDECAR}/diagnostics.json`),
+      new vscode.RelativePattern(vscode.Uri.file(derived), "diagnostics.json"),
     );
     const refresh = () => publishDiagnostics(folder);
     watcher.onDidChange(refresh);
@@ -553,8 +572,11 @@ async function vitest(
   );
   // The library's own reporter, alongside the JSON one: it is what knows the
   // diff. A workspace without the library still runs, just with less to say.
-  const sidecar = path.join(cwd, SIDECAR, "results.json");
-  const reporter = findLibrary(cwd)?.reporter;
+  const library = findLibrary(cwd);
+  const sidecar = library
+    ? path.join(library.root, DERIVED, "results.json")
+    : "";
+  const reporter = library?.reporter;
   if (reporter) fs.rmSync(sidecar, { force: true }); // never read a stale run
 
   const args = [
@@ -629,10 +651,10 @@ async function minimal(
     .get<string>("minimalCommand", "");
   const file = path.relative(cwd, uri.fsPath);
 
+  const library = findLibrary(cwd);
   const [command, args] = configured
     ? [configured.split(" ")[0]!, [...configured.split(" ").slice(1), file, name]]
     : (() => {
-        const library = findLibrary(cwd);
         if (!library)
           throw new Error(
             "Could not find dsl.import.meta.vitest.ts in this workspace; set namespace-tests.minimalCommand",
@@ -647,9 +669,15 @@ async function minimal(
         ] as const;
       })();
 
-  const result = await exec(command, [...args], cwd, {
-    NODE_COMPILE_CACHE: path.join(cwd, SIDECAR, "node-compile-cache"),
-  });
+  // Node keeps the compiled form of what it loads here, which is most of what
+  // a cold run costs: the library is ~10MB of TypeScript to parse otherwise.
+  // It sits with the library's own cache, which ignores itself.
+  const result = await exec(
+    command,
+    [...args],
+    cwd,
+    compiledModules ? { NODE_COMPILE_CACHE: compiledModules } : {},
+  );
   if (!result.stdout.trim()) {
     output.appendLine(`${command} ${args.join(" ")}`);
     output.appendLine(result.stderr || "(no output)");

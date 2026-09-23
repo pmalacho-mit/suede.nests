@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import picomatch from "picomatch";
 import { encode } from "@jridgewell/sourcemap-codec";
 import { init, parse } from "es-module-lexer";
+import { DERIVED, ensureDerived } from "./cache.mts";
 import { emittedFor, minimalFor } from "./minimal.mts";
 
 import type { Plugin, ViteUserConfig } from "vitest/config";
@@ -69,8 +70,6 @@ export type Options = {
   extracted?: string | false;
   /** Discover test files by scanning cwd. Default `true`. */
   scan?: boolean;
-  /** Where diagnostics.json is written. Default `".namespace-tests"`. */
-  outDir?: string;
   /**
    * Absolute path of the `runtime` module generated code imports `ntCheck`
    * from. Defaults to this plugin's own sibling when it is running from source
@@ -85,7 +84,7 @@ export type Options = {
    * are skipped by default so that vendoring the source does not add them to
    * your suite. This repository is the one place they should run.
    */
-  scanSelf?: boolean;
+  _scanSelf?: boolean;
   /**
    * Modules that must **not** be isolated per test, as glob patterns matched
    * against each module's path relative to the project root — the same shape as
@@ -173,9 +172,8 @@ export default function namespaceTests({
   include = [],
   extracted = "**/*.temp.ts",
   scan: doScan = true,
-  outDir = ".namespace-tests",
   runtimeFile,
-  scanSelf = false,
+  _scanSelf: scanSelf = false,
   noIsolateModuleImport = [],
 }: Options = {}): Plugin {
   // line-anchored: skips mentions in comments. Whether a namespace holds tests
@@ -185,7 +183,7 @@ export default function namespaceTests({
     "m",
   );
   const cwd = process.cwd();
-  /** file (relative) → warnings, written to outDir/diagnostics.json */
+  /** file (relative) → warnings, written to .derived/diagnostics.json */
   const diagnostics: Record<string, Warning[]> = {};
 
   // ── one LanguageService per plugin instance; files are re-read only when Vite reports a change ──
@@ -353,9 +351,9 @@ export default function namespaceTests({
   };
 
   const writeDiagnostics = () => {
-    fs.mkdirSync(path.join(cwd, outDir), { recursive: true });
+    ensureDerived();
     fs.writeFileSync(
-      path.join(cwd, outDir, "diagnostics.json"),
+      path.join(DERIVED, "diagnostics.json"),
       JSON.stringify(diagnostics, null, 2),
     );
   };

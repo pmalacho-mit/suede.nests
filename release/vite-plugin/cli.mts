@@ -5,9 +5,19 @@
 // every test in a file the editor just ran — is answered from the cache without
 // loading TypeScript at all, which is the difference between 40ms and a second.
 import fs from "node:fs";
+import module from "node:module";
 import path from "node:path";
 
-import { cacheKey, read } from "./cache.mts";
+import { cacheKey, compileCacheDir, ensureDerived, read } from "./cache.mts";
+
+// Most of what a cold run costs is Node compiling the library — TypeScript is
+// about 10MB to parse — so the compiled form is kept between runs. A caller
+// that knows better says so with `NODE_COMPILE_CACHE`, which Node reads before
+// any of this is loaded and which therefore caches more; this is what makes the
+// command fast on its own.
+ensureDerived();
+if (!process.env.NODE_COMPILE_CACHE)
+  module.enableCompileCache?.(compileCacheDir);
 
 const args = process.argv.slice(2);
 const flag = (name: string) => {

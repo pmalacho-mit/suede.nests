@@ -89,21 +89,6 @@ export function emitTests(
   return { header, tests, warnings: cx.warnings };
 }
 
-/** The whole generated module: the preamble, then every test, with per-line anchors. */
-export function render(emitted: Emitted): {
-  code: string;
-  anchors: (number | null)[];
-} {
-  const lines: Line[] = [
-    ...emitted.header.map((code) => ({ code, line: null })),
-    ...emitted.tests.flatMap((t) => [{ code: "", line: null }, ...t.lines]),
-  ];
-  return {
-    code: lines.map((l) => l.code).join("\n"),
-    anchors: lines.map((l) => l.line),
-  };
-}
-
 declare namespace emitTests {
   type Suite = `
     const add = (a: number, b: number) => a + b;
@@ -168,12 +153,16 @@ declare namespace emitTests {
     ""
   >;
 
-  type Plain = `declare namespace a { export type T = Expect<1, "=", 1>; }`;
-  type ReadsFile =
-    `declare namespace a { export type T = Expect<FromFile<"./a.txt">, "=", "hi">; }`;
-  type TypeOnlyImport = `
-    import type { existsSync } from "node:fs";
-    declare namespace a { export type T = Expect<Invoke<typeof existsSync, ["/nowhere"]>, "=", false>; }
+  type Plain = `
+    declare namespace a { 
+      export type T = Expect<1, "=", 1>; 
+    }
+  `;
+
+  type ReadsFile = `
+    declare namespace a { 
+      export type T = Expect<FromFile<"./a.txt">, "=", "hi">; 
+    }
   `;
 
   /** the preamble is what the tests turned out to need, and nothing when there are none */
@@ -198,10 +187,36 @@ declare namespace emitTests {
     >,
   ];
 
+  type TypeOnlyImport = `
+    import type { existsSync } from "node:fs";
+    declare namespace a { 
+      export type T = Expect<
+        Invoke<typeof existsSync, ["/nowhere"]>, 
+        "=", 
+        false
+      >; 
+    }
+  `;
+
   /** a type-only binding a test uses as a value is imported again, as a value */
   export type ValueImport = Expect<
     Invoke<typeof printHeader, [TypeOnlyImport]>,
     "includes",
     'import { existsSync as existsSync$ } from "node:fs"; // value import: the original import is type-only'
   >;
+}
+
+/** The whole generated module: the preamble, then every test, with per-line anchors. */
+export function render(emitted: Emitted): {
+  code: string;
+  anchors: (number | null)[];
+} {
+  const lines: Line[] = [
+    ...emitted.header.map((code) => ({ code, line: null })),
+    ...emitted.tests.flatMap((t) => [{ code: "", line: null }, ...t.lines]),
+  ];
+  return {
+    code: lines.map((l) => l.code).join("\n"),
+    anchors: lines.map((l) => l.line),
+  };
 }

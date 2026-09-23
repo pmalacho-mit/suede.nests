@@ -110,6 +110,48 @@ interface Node<Kind extends string> {
 type AnyFn = (...args: any[]) => any;
 
 /**
+ * Every call signature a function type has, as its parameters paired with what
+ * it returns.
+ *
+ * `Parameters<F>` and `ReturnType<F>` see only the *last* overload, so
+ * `Invoke<typeof s.replace, [",", ";"]>` would be rejected for not being the
+ * replacer-function form. Matching the overload list instead means any
+ * spelling the function actually accepts is accepted here — up to four
+ * overloads, which covers the standard library.
+ */
+type Signatures<T> = T extends {
+  (...a: infer A1): infer R1;
+  (...a: infer A2): infer R2;
+  (...a: infer A3): infer R3;
+  (...a: infer A4): infer R4;
+}
+  ? [A1, R1] | [A2, R2] | [A3, R3] | [A4, R4]
+  : T extends {
+        (...a: infer A1): infer R1;
+        (...a: infer A2): infer R2;
+        (...a: infer A3): infer R3;
+      }
+    ? [A1, R1] | [A2, R2] | [A3, R3]
+    : T extends { (...a: infer A1): infer R1; (...a: infer A2): infer R2 }
+      ? [A1, R1] | [A2, R2]
+      : T extends (...a: infer A) => infer R
+        ? [A, R]
+        : never;
+
+/** The arguments any of a function's overloads takes. */
+type ArgumentsOf<T> = Signatures<T>[0];
+
+/** What the overload that accepts `Args` returns. */
+type ReturnFor<T, Args> =
+  Signatures<T> extends infer Signature
+    ? Signature extends [infer Params, infer Result]
+      ? Args extends Params
+        ? Result
+        : never
+      : never
+    : never;
+
+/**
  * `T & never` is eagerly `never`, and `X | never` is `X`, so `X | Phantom<T>` is
  * exactly `X` — but it "uses" `T`, which keeps parameters that exist purely
  * for the runtime (`Args`, `Path`, …) from tripping `noUnusedParameters`.
@@ -142,8 +184,8 @@ export type Literal =
  * type Doubled = Invoke<typeof map, [[1, 2], typeof double]>; // functions are literals too
  * ```
  */
-export type Invoke<F extends AnyFn, Args extends Parameters<F>> =
-  | Awaited<ReturnType<F>>
+export type Invoke<F extends AnyFn, Args extends ArgumentsOf<F>> =
+  | Awaited<ReturnFor<F, Args>>
   | Phantom<Args>;
 
 /**
@@ -174,14 +216,8 @@ export type Construct<
 export type Call<
   Receiver,
   Method extends MethodsOf<Receiver>,
-  Args extends Receiver[Method] extends AnyFn
-    ? Parameters<Receiver[Method]>
-    : never,
-> =
-  | (Receiver[Method] extends AnyFn
-      ? Awaited<ReturnType<Receiver[Method]>>
-      : never)
-  | Phantom<Args>;
+  Args extends ArgumentsOf<Receiver[Method]>,
+> = Awaited<ReturnFor<Receiver[Method], Args>> | Phantom<Args>;
 
 type MethodsOf<T> = {
   [K in keyof T]-?: T[K] extends AnyFn ? K : never;
@@ -201,7 +237,6 @@ type MethodsOf<T> = {
  * Prefer this over `Widen` when you know the intended shape.
  */
 export type Fixture<T, Initial extends T & Literal> = T | Phantom<Initial>;
-
 
 /**
  * Widen literal types to their primitive base (`"parker"` → `string`,

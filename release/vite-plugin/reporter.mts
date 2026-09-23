@@ -4,6 +4,7 @@
 // plugin at transform time) — no custom protocol.
 import fs from "node:fs";
 import path from "node:path";
+import { ensureDerived } from "./cache.mts";
 import { encode } from "./codec.mts";
 
 import type { Reporter, TestCase, Vitest } from "vitest/node";
@@ -26,12 +27,10 @@ export type ResultRecord = {
 };
 
 export default class NamespaceTestsReporter implements Reporter {
-  outDir: string;
   results: ResultRecord[];
   root: string;
 
-  constructor({ outDir = ".namespace-tests" }: { outDir?: string } = {}) {
-    this.outDir = outDir;
+  constructor() {
     this.results = [];
     this.root = process.cwd();
   }
@@ -57,8 +56,7 @@ export default class NamespaceTestsReporter implements Reporter {
   }
 
   onTestRunEnd() {
-    const dir = path.join(this.root, this.outDir);
-    fs.mkdirSync(dir, { recursive: true });
+    const dir = ensureDerived();
     fs.writeFileSync(path.join(dir, "results.json"), JSON.stringify({ generatedAt: new Date().toISOString(), results: this.results }, null, 2));
   }
 }

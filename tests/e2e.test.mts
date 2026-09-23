@@ -27,6 +27,8 @@ test("scratch/failing.ts: four failures, with alias-line locations and sidecar o
   const out = path.join(repoRoot, "scratch/.out");
   try {
     execFileSync("npx", ["vitest", "run", "--config", cfg], {
+      // what the library writes, kept apart from the run this test is inside
+      env: { ...process.env, NAMESPACE_TESTS_DIR: path.join(out, ".derived") },
       cwd: repoRoot,
       stdio: "pipe",
     });
@@ -49,7 +51,7 @@ test("scratch/failing.ts: four failures, with alias-line locations and sidecar o
   );
   expect(results.map((r) => r.location?.line)).toEqual([5, 7, 8, 9]);
 
-  const side = readJson(path.join(out, ".namespace-tests/results.json")) as {
+  const side = readJson(path.join(out, ".derived/results.json")) as {
     results: ResultRecord[];
   };
   expect(side.results.map((r) => r.state)).toEqual([
@@ -59,7 +61,7 @@ test("scratch/failing.ts: four failures, with alias-line locations and sidecar o
     "failed",
   ]);
   const diag = readJson(
-    path.join(out, ".namespace-tests/diagnostics.json"),
+    path.join(out, ".derived/diagnostics.json"),
   ) as Record<string, Warning[]>;
   expect(diag["scratch/failing.ts"]?.[0]?.message).toBe(
     "`number` is a type, not a value",

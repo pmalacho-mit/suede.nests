@@ -102,8 +102,12 @@ declare namespace extracted {
     { source: "src/counter.ts"; test: "Counter > Chainable"; edited: false }
   >;
 
-  /** the same file, with something added to the body someone was given */
-  type Worked = Call<File, "concat", ["expect(1).toBe(1);\n"]>;
+  /** the same file, with a body that is no longer the one it was written with */
+  type Worked = Call<
+    File,
+    "replace",
+    [Body, "test('x', () => { expect(1).toBe(1); });"]
+  >;
 
   /** a body that no longer matches its fingerprint is one someone worked on */
   export type Edited = Expect<

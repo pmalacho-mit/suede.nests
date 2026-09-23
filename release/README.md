@@ -172,8 +172,8 @@ The editor extension extracts on a click, and puts Run, Debug and Delete at the
 top of the file it wrote.
 
 Extracting is usually instant, because a run has already printed every test in
-the file: `nt-minimal` answers from `.namespace-tests/minimal` without loading a
-compiler at all. It only does the work when nothing has run yet.
+the file: `nt-minimal` answers from the cache without loading a compiler at all.
+It only does the work when nothing has run yet.
 
 ```
 nt-minimal src/counter.ts "Counter > Chainable" [--runtime <spec>] [--root <ns>]
@@ -182,3 +182,35 @@ nt-minimal src/counter.ts "Counter > Chainable" [--runtime <spec>] [--root <ns>]
 `--runtime` is how the generated test imports the library's runtime helpers. It
 has to match what the plugin uses, or the answer is printed afresh rather than
 read back — the editor passes it for you.
+
+## Where things are written
+
+One directory, and it is not in your project: **`.derived/`, inside the
+library's own folder** — `release/.derived/` when the library is vendored,
+`node_modules/…/.derived/` when it is installed.
+
+```
+.derived/
+├── diagnostics.json   what the printer could not turn into a value
+├── results.json       what the reporter saw, so a failure can be explained
+└── cache/             only ever an optimisation; delete it freely
+    ├── minimal/       tests the printer has already written out
+    └── node/          the compiled form of the modules a command loads
+```
+
+The name is the point: nothing in it is authored. Every file is derived from
+your source, by this library, for this library — so none of it is yours to read
+or edit, and deleting any of it costs nothing but the time to write it again.
+The two JSON files are how the editor learns what happened; `cache/` is what
+makes it fast. Printed tests are keyed by the source they came from *and* by the
+version of the printer, so a changed printer never hands back stale work; Node's
+cache holds the compiled form of the modules a command loads, which is what
+keeps extracting a test at around 20ms rather than 250ms.
+
+It writes a `.gitignore` of `*` beside itself the first time it is used, so it
+stays out of git — and out of whatever else reads your tree. There is nothing to
+configure.
+
+`NAMESPACE_TESTS_DIR` moves it, which the library's own end-to-end test needs so
+that a run inside a run does not write over what the outer one wrote. There is
+no reason to set it otherwise.

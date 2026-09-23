@@ -1,16 +1,16 @@
-// A config for the deliberately failing file alone, written where the e2e test
-// reads it: `scratch/.out/vitest.json` and `scratch/.out/.namespace-tests/*`.
+// A config for the deliberately failing file alone. Vitest's own report goes to
+// `scratch/.out/vitest.json`; what the library writes goes wherever
+// `NAMESPACE_TESTS_DIR` says, which the e2e test sets so this run does not
+// write over the outer one's.
 import { defineConfig } from "vitest/config";
 import namespaceTests from "../release/vite-plugin/plugin.mts";
 import Reporter from "../release/vite-plugin/reporter.mts";
 
-const outDir = "scratch/.out/.namespace-tests";
-
 export default defineConfig({
-  plugins: [namespaceTests({ scan: false, include: ["scratch/failing.ts"], outDir })],
+  plugins: [namespaceTests({ scan: false, include: ["scratch/failing.ts"] })],
   test: {
     include: [],
-    reporters: ["json", new Reporter({ outDir })],
+    reporters: ["json", new Reporter()],
     outputFile: "scratch/.out/vitest.json",
   },
 });

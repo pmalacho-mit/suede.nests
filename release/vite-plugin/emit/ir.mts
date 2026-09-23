@@ -33,7 +33,13 @@ export type Expr =
   /** `Construct`: `new C(…)`. A constructor cannot be async, so never awaited. */
   | { kind: "construct"; callee: Expr; args: Expr[] }
   /** `Call`: `receiver.method(…)`, awaited on the same terms as a call. */
-  | { kind: "method"; receiver: Expr; method: string; args: Expr[]; awaited: boolean }
+  | {
+      kind: "method";
+      receiver: Expr;
+      method: string;
+      args: Expr[];
+      awaited: boolean;
+    }
   /** `X["key"]`, `X[0]`. */
   | { kind: "index"; object: Expr; key: string | number }
   /** `FromFile`. */
