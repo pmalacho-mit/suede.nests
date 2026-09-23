@@ -221,6 +221,20 @@ It writes a `.gitignore` of `*` beside itself the first time it is used, so it
 stays out of git — and out of whatever else reads your tree. There is nothing to
 configure.
 
+To start over:
+
+```
+node release/cli.mts --clean-extracted [dir]   # extracted tests under dir (default: here)
+node release/cli.mts --clean-cache             # printed tests, and Node's compiled modules
+node release/cli.mts --clean [dir]             # both
+```
+
+An extracted test is recognised by the header the editor writes, not by its
+name, so a file of yours that happens to end in `.temp.ts` is left alone — as is
+one that has been edited since it was extracted, unless you add `--force`. The
+cache is only an optimisation; `diagnostics.json` and `results.json`, which the
+editor reads, stay.
+
 `NAMESPACE_TESTS_DIR` moves it, which the library's own end-to-end test needs so
 that a run inside a run does not write over what the outer one wrote. There is
 no reason to set it otherwise.
