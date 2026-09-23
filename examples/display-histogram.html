@@ -1,9 +1,9 @@
 <!doctype html>
-<!-- Display page: overlays actual and expected bucket counts as bars. Contract: docs/IMPLEMENTATION_PLAN.md § 6.3 -->
+<!-- Display page: overlays actual and expected bucket counts as bars. Contract: see "Display" in release/vscode-extension/README.md -->
 <meta charset="utf-8" />
 <style>
   body { font: 13px system-ui, sans-serif; color: var(--vscode-foreground, #ccc); background: var(--vscode-editor-background, #1e1e1e); margin: 0; padding: 12px; }
-  .chart { display: flex; align-items: flex-end; gap: 10px; height: 160px; }
+  .chart { display: flex; gap: 10px; height: 160px; }
   .bucket { display: flex; gap: 2px; align-items: flex-end; flex: 1; }
   .bar { flex: 1; min-width: 12px; }
   .actual { background: #4e9af1; } .expected { background: #f1a54e; opacity: .7; }
@@ -27,5 +27,4 @@
     }
     document.getElementById("status").textContent = data.passed ? "✓ distributions match" : `✗ ${data.message ?? "distributions differ"}`;
   });
-  window.parent.postMessage({ type: "namespace-tests:ready" }, "*");
 </script>

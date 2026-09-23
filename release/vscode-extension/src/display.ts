@@ -58,6 +58,15 @@ export type Sources = {
  * and leave as `namespace-tests:result`, so this never hears its own message.
  */
 const bootstrap = (codec: string) => `(() => {
+  // An editor running in a browser hides \`window.parent\` from a webview, so a
+  // page announcing itself the way it would from a frame throws. \`parent\` is
+  // replaceable: pointing it at the page's own window makes the announcement
+  // arrive here, and gives the page nothing it did not already have.
+  if (!window.parent) {
+    try { window.parent = window; } catch {}
+    if (!window.parent)
+      try { Object.defineProperty(window, "parent", { value: window, configurable: true }); } catch {}
+  }
   const vscode = acquireVsCodeApi();
   const codec = import(${JSON.stringify(codec).replace(/</g, "\\u003c")});
   let announced = false;
@@ -142,6 +151,16 @@ declare namespace render {
     Html,
     "includes",
     "script-src 'nonce-abc123' https://r;"
+  >;
+
+  /**
+   * an editor in a browser hides `window.parent` from a webview; a page that
+   * announces itself through it is given its own window to announce to
+   */
+  export type Parent = Expect<
+    Html,
+    "includes",
+    "if (!window.parent) {"
   >;
 
   /** a base that would break out of its attribute cannot */
