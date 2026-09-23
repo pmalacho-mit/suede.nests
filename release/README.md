@@ -172,11 +172,14 @@ The editor extension extracts on a click, and puts Run, Debug and Delete at the
 top of the file it wrote.
 
 Extracting is usually instant, because a run has already printed every test in
-the file: `nt-minimal` answers from the cache without loading a compiler at all.
+the file: `release/cli.mts` answers from the cache without loading a compiler at all.
 It only does the work when nothing has run yet.
 
 ```
-nt-minimal src/counter.ts "Counter > Chainable" [--runtime <spec>] [--root <ns>]
+node release/cli.mts src/counter.ts "Counter > Chainable" [--runtime <spec>] [--root <ns>]
+node release/cli.mts src/counter.ts "Counter > Chainable" --served
+node release/cli.mts src/counter.ts --collector
+node release/cli.mts --help
 ```
 
 `--runtime` is how the generated test imports the library's runtime helpers. It

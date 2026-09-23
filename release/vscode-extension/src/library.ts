@@ -11,7 +11,7 @@ const found = new Map<string, Library | null>();
 export type Library = {
   /** The folder the release was installed into. */
   root: string;
-  /** The CLI that prints one test as a standalone file. */
+  /** The command line that prints a test — or a whole file — as Vitest sees it. */
   minimal: string;
   /** The runtime generated tests import `ntCheck` from. */
   runtime: string;
@@ -45,14 +45,16 @@ export function findLibrary(folder: string): Library | null {
         continue;
       }
       if (entry.name !== DSL) continue;
-      // `cli.mts` answers from the cache without loading a compiler; older
-      // installs only have `minimal.mts`, which does the same work the slow way.
-      const cli = path.join(dir, "vite-plugin", "cli.mts");
-      const minimal = path.join(dir, "vite-plugin", "minimal.mts");
-      if (fs.existsSync(cli) || fs.existsSync(minimal)) {
+      // The command line sits beside the DSL; a library from before it moved
+      // keeps it in `vite-plugin/`.
+      const cli = [
+        path.join(dir, "cli.mts"),
+        path.join(dir, "vite-plugin", "cli.mts"),
+      ].find((candidate) => fs.existsSync(candidate));
+      if (cli) {
         library = {
           root: dir,
-          minimal: fs.existsSync(cli) ? cli : minimal,
+          minimal: cli,
           runtime: path.join(dir, "vite-plugin", "runtime.mts"),
           reporter: path.join(dir, "vite-plugin", "reporter.mts"),
         };

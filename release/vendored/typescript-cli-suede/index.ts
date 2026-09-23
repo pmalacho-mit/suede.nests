@@ -22,7 +22,7 @@
  * particularly that named properties and iteration expose different things.
  */
 import { fileURLToPath } from "node:url";
-import { flag, flags, is, type Flag } from "./flag.js";
+import { flag, flags, is, type Flag } from "./flag.ts";
 
 export class InvalidOptionError extends Error {
   public readonly name = "InvalidOptionError";
