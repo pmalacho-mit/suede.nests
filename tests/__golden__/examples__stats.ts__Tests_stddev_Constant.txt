@@ -11,5 +11,7 @@ function stddev(xs: readonly number[]): number {
 }
 
 test("Tests > stddev > Constant", () => {
-  expect(stddev([3, 3, 3])).toEqual(0);
+  const actual = stddev([3, 3, 3]);
+  const expected = 0;
+  expect(actual).toEqual(expected);
 });

@@ -7,5 +7,7 @@ function mean(xs: ArrayLike<number>): number {
 
 test("Tests > mean > Basic", () => {
   const Sample = [2, 4, 4, 4, 5, 5, 7, 9];
-  expect(mean(Sample)).toEqual(5);
+  const actual = mean(Sample);
+  const expected = 5;
+  expect(actual).toEqual(expected);
 });

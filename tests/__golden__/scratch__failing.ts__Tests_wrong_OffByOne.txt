@@ -3,5 +3,7 @@ import { test, expect } from "vitest";
 const add = (a: number, b: number, c = 0) => a + b + c;
 
 test("Tests > wrong > OffByOne", () => {
-  expect(add(4, 5)).toEqual(10);
+  const actual = add(4, 5);
+  const expected = 10;
+  expect(actual).toEqual(expected);
 });

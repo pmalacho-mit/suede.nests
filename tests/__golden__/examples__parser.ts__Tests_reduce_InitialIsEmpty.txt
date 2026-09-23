@@ -17,5 +17,6 @@ const initialState: State = { todos: [], filter: "all" };
 
 /** The exported `initialState` singleton is usable directly via `typeof`. */
 test("Tests > reduce > InitialIsEmpty", () => {
-  expect((initialState).todos).toHaveLength(0);
+  const actual = (initialState).todos;
+  expect(actual).toHaveLength(0);
 });

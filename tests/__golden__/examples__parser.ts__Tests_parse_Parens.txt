@@ -73,5 +73,7 @@ function parse(src: string): Expr {
 
 /** `matches` lets you check just the shape you care about. */
 test("Tests > parse > Parens", () => {
-  expect(parse("(1 + 2) * 3")).toMatchObject({ kind: "bin", op: "*" });
+  const actual = parse("(1 + 2) * 3");
+  const expected = { kind: "bin", op: "*" };
+  expect(actual).toMatchObject(expected);
 });

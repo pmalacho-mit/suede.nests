@@ -58,6 +58,9 @@ test("Tests > UserRepository > CreateHasEmail", async () => {
   const FixedClock: Clock = { now: fixedNow };
   const Repo = new UserRepository(FixedClock);
   const Ada = await Repo.create({ name: "Ada", email: "ada@example.com" });
-  expect.soft(Ada).toHaveProperty("email");
-  expect.soft(Ada.email).toContain("@");
+  const expected1 = "email";
+  expect.soft(Ada).toHaveProperty(expected1);
+  const actual2 = Ada.email;
+  const expected2 = "@";
+  expect.soft(actual2).toContain(expected2);
 });

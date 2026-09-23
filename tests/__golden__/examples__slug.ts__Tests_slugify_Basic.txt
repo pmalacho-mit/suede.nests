@@ -13,5 +13,7 @@ function slugify(input: string, maxLength = 64): string {
 
 /** Punctuation collapses into single dashes. */
 test("Tests > slugify > Basic", () => {
-  expect(slugify("Hello, World!")).toEqual("hello-world");
+  const actual = slugify("Hello, World!");
+  const expected = "hello-world";
+  expect(actual).toEqual(expected);
 });

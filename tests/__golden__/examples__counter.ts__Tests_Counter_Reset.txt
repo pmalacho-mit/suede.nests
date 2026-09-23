@@ -35,7 +35,12 @@ test("Tests > Counter > Reset", () => {
   const Counter$ = new Counter(10, 2);
   Counter$.increment(2);
   Counter$.reset();
-  expect.soft(Counter$.count).toEqual(0);
-  expect.soft(Counter$.history).toHaveLength(0);
-  expect.soft(Counter$.history).not.toContain(12);
+  const actual1 = Counter$.count;
+  const expected1 = 0;
+  expect.soft(actual1).toEqual(expected1);
+  const actual2 = Counter$.history;
+  expect.soft(actual2).toHaveLength(0);
+  const actual3 = Counter$.history;
+  const expected3 = 12;
+  expect.soft(actual3).not.toContain(expected3);
 });

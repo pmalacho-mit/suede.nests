@@ -42,7 +42,12 @@ function reduce(state: State, action: Action): State {
 test("Tests > reduce > Add", () => {
   const Empty: State = { todos: [], filter: "all" };
   const One = reduce(Empty, { type: "add", id: 1n, text: "buy milk" });
-  expect.soft(One.todos).toEqual([{ id: 1n, text: "buy milk", done: false, due: null }]);
-  expect.soft(One.todos[0]!.due).toEqual(null);
-  expect.soft(One.todos[0]!.id).toEqual(1n);
+  const actual1 = One.todos;
+  const expected1 = [{ id: 1n, text: "buy milk", done: false, due: null }];
+  expect.soft(actual1).toEqual(expected1);
+  const actual2 = One.todos[0]!.due;
+  expect.soft(actual2).toEqual(null);
+  const actual3 = One.todos[0]!.id;
+  const expected3 = 1n;
+  expect.soft(actual3).toEqual(expected3);
 });

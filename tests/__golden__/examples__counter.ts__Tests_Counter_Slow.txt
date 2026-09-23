@@ -32,5 +32,7 @@ class Counter {
 
 test("Tests > Counter > Slow", {"timeout":50}, () => {
   const Counter$ = new Counter(10, 2);
-  expect(Counter$.increment(1000).count).toEqual(2010);
+  const actual = Counter$.increment(1000).count;
+  const expected = 2010;
+  expect(actual).toEqual(expected);
 });

@@ -6,5 +6,6 @@ function mean(xs: ArrayLike<number>): number {
 }
 
 test("Tests > mean > Integer", () => {
-  expect(mean([1, 3])).toSatisfy(Number.isInteger);
+  const actual = mean([1, 3]);
+  expect(actual).toSatisfy(Number.isInteger);
 });

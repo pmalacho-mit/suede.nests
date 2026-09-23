@@ -72,5 +72,7 @@ function parse(src: string): Expr {
 }
 
 test("Tests > parse > Negation", () => {
-  expect(parse("-5")).toMatchObject({ kind: "neg", expr: { value: 5 } });
+  const actual = parse("-5");
+  const expected = { kind: "neg", expr: { value: 5 } };
+  expect(actual).toMatchObject(expected);
 });

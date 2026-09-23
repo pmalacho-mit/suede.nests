@@ -11,5 +11,7 @@ function stddev(xs: readonly number[]): number {
 }
 
 test("Tests > stddev > Cases[2]", () => {
-  expect(Math.abs(stddev([1, 2, 3, 4]) - 1.118033988749895)).toBeLessThanOrEqual(1e-12);
+  const actual = stddev([1, 2, 3, 4]);
+  const expected = 1.118033988749895;
+  expect(Math.abs(actual - expected)).toBeLessThanOrEqual(1e-12);
 });

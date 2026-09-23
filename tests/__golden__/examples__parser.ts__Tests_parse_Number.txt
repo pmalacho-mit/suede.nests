@@ -72,5 +72,7 @@ function parse(src: string): Expr {
 }
 
 test("Tests > parse > Number", () => {
-  expect(parse("42")).toEqual({ kind: "num", value: 42 });
+  const actual = parse("42");
+  const expected = { kind: "num", value: 42 };
+  expect(actual).toEqual(expected);
 });

@@ -42,5 +42,7 @@ function reduce(state: State, action: Action): State {
 test("Tests > reduce > ToggleUnknownIsNoop", () => {
   const Empty: State = { todos: [], filter: "all" };
   const One = reduce(Empty, { type: "add", id: 1n, text: "buy milk" });
-  expect(reduce(One, { type: "toggle", id: 2n }).todos).toEqual(One.todos);
+  const actual = reduce(One, { type: "toggle", id: 2n }).todos;
+  const expected = One.todos;
+  expect(actual).toEqual(expected);
 });

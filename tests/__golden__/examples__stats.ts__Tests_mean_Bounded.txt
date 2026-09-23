@@ -7,7 +7,12 @@ function mean(xs: ArrayLike<number>): number {
 
 test("Tests > mean > Bounded", () => {
   const Sample = [2, 4, 4, 4, 5, 5, 7, 9];
-  expect.soft(mean(Sample)).toBeGreaterThanOrEqual(2);
-  expect.soft(mean(Sample)).toBeLessThanOrEqual(9);
-  expect.soft(mean(Sample)).toSatisfy(Number.isFinite);
+  const actual1 = mean(Sample);
+  const expected1 = 2;
+  expect.soft(actual1).toBeGreaterThanOrEqual(expected1);
+  const actual2 = mean(Sample);
+  const expected2 = 9;
+  expect.soft(actual2).toBeLessThanOrEqual(expected2);
+  const actual3 = mean(Sample);
+  expect.soft(actual3).toSatisfy(Number.isFinite);
 });

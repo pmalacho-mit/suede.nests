@@ -4,5 +4,7 @@ const user = () => ({ name: "ada", age: 36 });
 
 /** `matches` compares only the keys listed, and this one is wrong */
 test("Tests > wrong > Shape", () => {
-  expect(user()).toMatchObject({ name: "bob" });
+  const actual = user();
+  const expected = { name: "bob" };
+  expect(actual).toMatchObject(expected);
 });

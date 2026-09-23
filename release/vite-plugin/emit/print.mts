@@ -17,7 +17,11 @@ import type {
 } from "./ir.mts";
 
 import type { Table } from "../../dsl.import.meta.vitest.ts";
-import type { printStatements } from "../../_internal/harness.mts";
+import type {
+  printAlias,
+  printMatcher,
+  printStatements,
+} from "../../_internal/harness.mts";
 
 const quote = (s: string) => JSON.stringify(s);
 
@@ -312,66 +316,106 @@ export const isCondition = (op: string): op is ConditionName =>
   Object.hasOwn(matchers, op);
 
 /** `.rejects`, `.not`, the matcher and its arguments, as source text. */
+declare namespace printAssertion {
+  type Add = "const add = (a: number, b: number) => a + b;";
+
+  /** what is asserted on, and what it is compared against, each get a name */
+  export type Locals = Expect<
+    Invoke<typeof printStatements, [`${Add}type Subject = Expect<Invoke<typeof add, [1, 2]>, "=", 3>;`]>,
+    "=",
+    ["const actual = add(1, 2);", "const expected = 3;", "expect(actual).toEqual(expected);"]
+  >;
+
+  /** a value that already has a name keeps it: `const actual = add` says nothing */
+  export type Named = Expect<
+    Invoke<typeof printStatements, [`${Add}type Subject = Expect<typeof add, "defined">;`]>,
+    "=",
+    ["expect(add).toBeDefined();"]
+  >;
+
+  /** several in one body say which goes with which */
+  export type Paired = Expect<
+    Invoke<
+      typeof printAlias,
+      [
+        `${Add}declare namespace add {
+           export type Both = [Expect<Invoke<typeof add, [1, 1]>, "=", 2>, Expect<Invoke<typeof add, [2, 2]>, "=", 4>];
+         }`,
+        "Both"
+      ]
+    >,
+    "includes",
+    "const actual2 = add(2, 2);\n  const expected2 = 4;\n  expect.soft(actual2).toEqual(expected2);"
+  >;
+
+  /** a thunk is not a value to name: `throws` reads as it always has */
+  export type Thrown = Expect<
+    Invoke<typeof printStatements, [`${Add}type Subject = Throws<Invoke<typeof add, [1, 1]>>;`]>,
+    "=",
+    ["expect(() => (add(1, 1))).toThrow();"]
+  >;
+}
+
 const printChain = (c: Chain): string =>
   `${c.rejects ? ".rejects" : ""}${c.negated ? ".not" : ""}.${c.matcher}(${c.args.join(", ")})`;
 
 declare namespace matchers {
-  /** every condition, as the statement it prints */
+  /** every condition, as the matcher it prints */
   export type Conditions = Table<
-    typeof printStatements,
+    typeof printMatcher,
     [
       [
         args: ['type Subject = Expect<"a", "=", "b">;'],
-        expected: ['expect("a").toEqual("b");'],
+        expected: "expect(actual).toEqual(expected);",
       ],
       [
         args: ['type Subject = Expect<"a", "!=", "b">;'],
-        expected: ['expect("a").not.toEqual("b");'],
+        expected: "expect(actual).not.toEqual(expected);",
       ],
       [
         args: ['type Subject = Expect<1, "is", 1>;'],
-        expected: ["expect(1).toBe(1);"],
+        expected: "expect(actual).toBe(expected);",
       ],
       [
         args: ['type Subject = Expect<"ab", "includes", "b">;'],
-        expected: ['expect("ab").toContain("b");'],
+        expected: "expect(actual).toContain(expected);",
       ],
       [
         args: ['type Subject = Expect<[], "isEmpty">;'],
-        expected: ["expect([]).toHaveLength(0);"],
+        expected: "expect(actual).toHaveLength(0);",
       ],
       [
         args: ['type Subject = Expect<1, "isInteger">;'],
-        expected: ["expect(1).toSatisfy(Number.isInteger);"],
+        expected: "expect(actual).toSatisfy(Number.isInteger);",
       ],
       [
         args: ['type Subject = Expect<2, ">", 1>;'],
-        expected: ["expect(2).toBeGreaterThan(1);"],
+        expected: "expect(actual).toBeGreaterThan(expected);",
       ],
       [
         args: ['type Subject = Expect<1, ["~=", 0.5], 1.2>;'],
-        expected: ["expect(Math.abs(1 - 1.2)).toBeLessThanOrEqual(0.5);"],
+        expected: "expect(Math.abs(actual - expected)).toBeLessThanOrEqual(0.5);",
       ],
       [
         args: ['type Subject = Expect<"x", "matches", "/x+/i">;'],
-        expected: ['expect("x").toMatch(/x+/i);'],
+        expected: "expect(actual).toMatch(/x+/i);",
       ],
       [
         args: ['type Subject = Expect<{ a: 1 }, "matches", { a: 1 }>;'],
-        expected: ["expect({ a: 1 }).toMatchObject({ a: 1 });"],
+        expected: "expect(actual).toMatchObject(expected);",
       ],
       [
         args: ['type Subject = Expect<1, "=", Snapshot<"named">>;'],
-        expected: ['expect(1).toMatchSnapshot("named");'],
+        expected: 'expect(actual).toMatchSnapshot("named");',
       ],
       [
         args: ['type Subject = Expect<1, "=", Snapshot>;'],
-        expected: ["expect(1).toMatchSnapshot();"],
+        expected: "expect(actual).toMatchSnapshot();",
       ],
       /** an ordering condition on something that is not a number compares directly */
       [
         args: ['type Subject = Expect<"b", ">", "a">;'],
-        expected: ['expect("b" > "a").toBe(true);'],
+        expected: "expect(actual > expected).toBe(true);",
       ],
     ]
   >;
@@ -444,7 +488,57 @@ const throwsChain = (expected: Expr | null): Chain => {
 // ── statements ──────────────────────────────────────────────────────────────
 
 /** One assertion, as statements: a hoisted expected value when one is needed, then the `expect`. */
-export function printAssertion(a: Assertion): string[] {
+/**
+ * The names a test body has already used, so a local this printer introduces
+ * never shadows something the test calls. Seeded with everything the test
+ * refers to by name, and with every local handed out so far.
+ */
+export type Names = { take: (base: string) => string };
+
+export const names = (taken: Iterable<string>): Names => {
+  const used = new Set(taken);
+  return {
+    take(base) {
+      let name = base;
+      for (let n = 2; used.has(name); n++) name = `${base}${n}`;
+      used.add(name);
+      return name;
+    },
+  };
+};
+
+/** Every name a test refers to, so a local never lands on one of them. */
+export const namesIn = (t: TestCase): string[] => {
+  const found: string[] = [];
+  const walk = (e: Expr): void => {
+    if (e.kind === "name") found.push(e.name.split(".")[0]!);
+    children(e).forEach(walk);
+  };
+  for (const b of t.bindings) {
+    found.push(b.name);
+    b.params?.forEach((p) => found.push(p.name));
+    walk(b.value);
+  }
+  for (const s of t.body) exprsOf(s).forEach(walk);
+  return found;
+};
+
+/**
+ * Worth a name of its own? A value that is already a plain name is not —
+ * `const actual = Counter$;` says nothing that `Counter$` did not.
+ */
+const worthBinding = (code: string) => !isIdentifier(code) && code !== "undefined";
+
+/**
+ * @param scope Names the test body has already used.
+ * @param nth Which assertion of the body this is, when there is more than one:
+ *   `actual2` pairs with `expected2`, so a body of several says which is which.
+ */
+export function printAssertion(
+  a: Assertion,
+  scope = names([]),
+  nth = "",
+): string[] {
   const { condition: op, display, soft } = a;
   const expectFn = !display && soft ? "expect.soft" : "expect";
   const actual =
@@ -458,17 +552,32 @@ export function printAssertion(a: Assertion): string[] {
         : printExpr(a.actual);
   const pre: string[] = [];
   let expected = a.expected ? printExpr(a.expected) : "undefined";
-  // an expected value that awaits cannot sit inside a callback: hoist it
-  if (
+  // A thunk is the subject of `throws`, and `ntCheck` is handed the real one to
+  // await itself; everything else reads better — and debugs far better — as a
+  // value with a name on it.
+  let subject = actual;
+  const named = op !== "throws" && !display;
+  if (named && worthBinding(actual)) {
+    subject = scope.take(`actual${nth}`);
+    pre.push(`const ${subject} = ${actual};`);
+  }
+  // a snapshot is not a value to bind: it names a file, and the matcher takes it
+  if (named && a.expected?.kind !== "snapshot" && worthBinding(expected)) {
+    const name = scope.take(`expected${nth}`);
+    pre.push(`const ${name} = ${expected};`);
+    expected = name;
+  } else if (
     a.expected &&
     awaits(a.expected) &&
     (display || op === "satisfies" || op === "some" || op === "every")
   ) {
-    pre.push(`const expected = ${expected};`);
-    expected = "expected";
+    // an expected value that awaits cannot sit inside a callback: hoist it
+    const name = scope.take(`expected${nth}`);
+    pre.push(`const ${name} = ${expected};`);
+    expected = name;
   }
   const c = matchers[op](a, {
-    actual,
+    actual: subject,
     expected,
     param: a.param ? printExpr(a.param) : "undefined",
   });
@@ -482,12 +591,34 @@ export function printAssertion(a: Assertion): string[] {
       ...pre,
       `await ntCheck(task, { display: ${quote(display.page)}, meta: ${display.meta ? printExpr(display.meta) : "undefined"}, soft: ${soft} }, async () => ${actual}, ${expected}, (actual) => ${expectFn}(actual)${text});`,
     ];
-  const statement = `${expectFn}(${actual})${text};`;
+  const statement = `${expectFn}(${subject})${text};`;
   return [...pre, c.rejects ? `await ${statement}` : statement];
 }
 
-export const printStatement = (s: Statement): string[] =>
-  s.kind === "effect" ? [`${printExpr(s.expr)};`] : printAssertion(s);
+export const printStatement = (
+  s: Statement,
+  scope = names([]),
+  nth = "",
+): string[] =>
+  s.kind === "effect" ? [`${printExpr(s.expr)};`] : printAssertion(s, scope, nth);
+
+/**
+ * A whole test body: one scope across it, so two assertions never bind the same
+ * name, and ordinals only when there is more than one to tell apart.
+ */
+export function printBody(body: Statement[], scope = names([])): string[][] {
+  const assertions = body.filter((s) => s.kind === "assert").length;
+  let asserted = 0;
+  return body.map((s) =>
+    printStatement(
+      s,
+      scope,
+      // counted over assertions alone: the effects of a `Given` are not ones,
+      // and `actual3` for the first thing asserted reads as a bug
+      s.kind === "assert" && assertions > 1 ? `${++asserted}` : "",
+    ),
+  );
+}
 
 const printParam = (p: Param) =>
   `${p.name}: ${p.type}${p.fallback ? ` = ${printExpr(p.fallback)}` : ""}`;
@@ -582,6 +713,7 @@ const isAsync = (t: TestCase, needs: Needs) =>
 
 export function printTest(t: TestCase): EmittedTest {
   const needs = needsOf(t);
+  const scope = names(namesIn(t));
   const doc: Line[] = t.doc
     ? [{ code: `/** ${t.doc.text.replace(/\n/g, " ")} */`, line: t.doc.line }]
     : [];
@@ -598,10 +730,10 @@ export function printTest(t: TestCase): EmittedTest {
             code: `  ${printBinding(b)}`,
             line: b.line,
           })),
-          ...t.body.flatMap((s) =>
-            printStatement(s).map((code) => ({
+          ...printBody(t.body, scope).flatMap((lines, index) =>
+            lines.map((code) => ({
               code: `  ${code}`,
-              line: s.line,
+              line: t.body[index]!.line,
             })),
           ),
           { code: `});`, line: t.line },

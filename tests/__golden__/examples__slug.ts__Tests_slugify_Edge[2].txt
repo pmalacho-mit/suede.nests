@@ -12,5 +12,7 @@ function slugify(input: string, maxLength = 64): string {
 }
 
 test("Tests > slugify > Edge[2]", () => {
-  expect(slugify("a")).toEqual("a");
+  const actual = slugify("a");
+  const expected = "a";
+  expect(actual).toEqual(expected);
 });

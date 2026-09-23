@@ -14,6 +14,8 @@ function firstStatementKind(source: string): string {
   return first ? ts.SyntaxKind[first.kind] : "None";
 }
 
-test("Tests > tokens > Kind", () => {
-  expect(firstStatementKind("class A {}")).toEqual("ClassDeclaration");
+test("firstStatementKind > Kind", () => {
+  const actual = firstStatementKind("class A {}");
+  const expected = "ClassDeclaration";
+  expect(actual).toEqual(expected);
 });

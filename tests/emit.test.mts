@@ -100,7 +100,9 @@ describe("expressions", () => {
       [
         'test("load > Roundtrip", async () => {',
         "  const Loaded = async (Id: string) => await load(Id);",
-        '  expect((await Loaded("a")).id).toEqual("a");',
+        '  const actual = (await Loaded("a")).id;',
+        '  const expected = "a";',
+        "  expect(actual).toEqual(expected);",
         "});",
       ].join("\n"),
     );
@@ -139,7 +141,9 @@ describe("assertions", () => {
     const [statement] = lowerBody(cx, type("Subject"), false);
     expect(statement).toMatchObject({ kind: "assert", shape: "typedArray" });
     expect(printStatement(statement!)).toEqual([
-      "expect(Array.from(bytes())).toEqual([1, 2]);",
+      "const actual = Array.from(bytes());",
+      "const expected = [1, 2];",
+      "expect(actual).toEqual(expected);",
     ]);
   });
 
@@ -168,8 +172,12 @@ describe("assertions", () => {
       type Subject = Expect<Invoke<typeof add, [1, 2]>, "satisfies", Invoke<typeof pred, [1]>>;
     `);
     expect(
-      lowerBody(cx, type("Subject"), false).flatMap(printStatement),
-    ).toEqual(["expect(add(1, 2)).toSatisfy(pred(1));"]);
+      lowerBody(cx, type("Subject"), false).flatMap((s) => printStatement(s)),
+    ).toEqual([
+      "const actual = add(1, 2);",
+      "const expected = pred(1);",
+      "expect(actual).toSatisfy(expected);",
+    ]);
   });
 
   test("a string that merely mentions await is not hoisted", () => {
@@ -178,8 +186,11 @@ describe("assertions", () => {
       type Subject = Expect<"an await in a string", "satisfies", typeof check>;
     `);
     expect(
-      lowerBody(cx, type("Subject"), false).flatMap(printStatement),
-    ).toEqual(['expect("an await in a string").toSatisfy(check);']);
+      lowerBody(cx, type("Subject"), false).flatMap((s) => printStatement(s)),
+    ).toEqual([
+      'const actual = "an await in a string";',
+      "expect(actual).toSatisfy(check);",
+    ]);
   });
 
   test("builds the throws matcher from a class, a message or a matcher literal", () => {
@@ -269,6 +280,8 @@ describe("test cases", () => {
     ).toEqual([
       'export type Simple = Expect<Sum, "=", 9>;',
       "type Sum = Invoke<typeof add, [4, 5]>;",
+      // the locals an assertion binds are anchored to the assertion itself
+      'export type Simple = Expect<Sum, "=", 9>;',
       'export type Simple = Expect<Sum, "=", 9>;',
       'export type Simple = Expect<Sum, "=", 9>;',
     ]);

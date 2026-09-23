@@ -59,5 +59,6 @@ test("Tests > UserRepository > FindReturnsSameObject", async () => {
   const FixedClock: Clock = { now: fixedNow };
   const Repo = new UserRepository(FixedClock);
   const Ada = await Repo.create({ name: "Ada", email: "ada@example.com" });
-  expect(await Repo.find(Ada.id)).toBe(Ada);
+  const actual = await Repo.find(Ada.id);
+  expect(actual).toBe(Ada);
 });

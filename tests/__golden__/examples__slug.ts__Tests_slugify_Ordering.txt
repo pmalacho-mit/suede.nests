@@ -12,5 +12,7 @@ function slugify(input: string, maxLength = 64): string {
 }
 
 test("Tests > slugify > Ordering", () => {
-  expect(slugify("b") > "a").toBe(true);
+  const actual = slugify("b");
+  const expected = "a";
+  expect(actual > expected).toBe(true);
 });

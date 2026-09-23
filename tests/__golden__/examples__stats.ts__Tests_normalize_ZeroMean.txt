@@ -18,5 +18,7 @@ function normalize(xs: readonly number[]): Float64Array {
 
 test("Tests > normalize > ZeroMean", () => {
   const N = normalize([1, 2, 3]);
-  expect(Math.abs(mean(N) - 0)).toBeLessThanOrEqual(1e-12);
+  const actual = mean(N);
+  const expected = 0;
+  expect(Math.abs(actual - expected)).toBeLessThanOrEqual(1e-12);
 });

@@ -18,5 +18,7 @@ function normalize(xs: readonly number[]): Float64Array {
 const range = (n: number) => Array.from({ length: n }, (_, i) => i);
 
 test("Tests > normalize > Big", {"timeout":30000,"retry":1}, () => {
-  expect(normalize(range(1_000_000)).length).toEqual(1_000_000);
+  const actual = normalize(range(1_000_000)).length;
+  const expected = 1_000_000;
+  expect(actual).toEqual(expected);
 });

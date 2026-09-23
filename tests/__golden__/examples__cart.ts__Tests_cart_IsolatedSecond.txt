@@ -4,5 +4,7 @@ import { conversionCount, formatCents } from "./lib/money.ts";
 
 test("Tests > cart > IsolatedSecond", () => {
   formatCents(2);
-  expect(conversionCount()).toEqual(1);
+  const actual = conversionCount();
+  const expected = 1;
+  expect(actual).toEqual(expected);
 });

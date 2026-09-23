@@ -5,5 +5,7 @@ import { conversionCount, formatCents } from "./lib/money.ts";
 /** Each test gets its own copy of `./lib/money.ts`, so the count this test sees is its own. Both of these pass only because the import is isolated. */
 test("Tests > cart > IsolatedFirst", () => {
   formatCents(1);
-  expect(conversionCount()).toEqual(1);
+  const actual = conversionCount();
+  const expected = 1;
+  expect(actual).toEqual(expected);
 });

@@ -18,5 +18,6 @@ function normalize(xs: readonly number[]): Float64Array {
 
 test("Tests > normalize > Includes", () => {
   const N = normalize([1, 2, 3]);
-  expect(N).toContain(0);
+  const expected = 0;
+  expect(N).toContain(expected);
 });

@@ -59,5 +59,6 @@ test("Tests > UserRepository > Create", async () => {
   const FixedClock: Clock = { now: fixedNow };
   const Repo = new UserRepository(FixedClock);
   const Ada = await Repo.create({ name: "Ada", email: "ada@example.com" });
-  expect(Ada).toMatchObject({ id: 1, roles: [], createdAt: "2026-01-01T00:00:00.000Z" });
+  const expected = { id: 1, roles: [], createdAt: "2026-01-01T00:00:00.000Z" };
+  expect(Ada).toMatchObject(expected);
 });

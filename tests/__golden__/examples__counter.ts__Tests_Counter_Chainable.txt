@@ -33,5 +33,6 @@ class Counter {
 /** increment() is chainable — it returns the same instance. */
 test("Tests > Counter > Chainable", () => {
   const Counter$ = new Counter(10, 2);
-  expect(Counter$.increment()).toBe(Counter$);
+  const actual = Counter$.increment();
+  expect(actual).toBe(Counter$);
 });

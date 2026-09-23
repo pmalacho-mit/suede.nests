@@ -42,5 +42,6 @@ function reduce(state: State, action: Action): State {
 test("Tests > reduce > Toggle", () => {
   const Empty: State = { todos: [], filter: "all" };
   const One = reduce(Empty, { type: "add", id: 1n, text: "buy milk" });
-  expect(reduce(One, { type: "toggle", id: 1n }).todos[0]!.done).toEqual(true);
+  const actual = reduce(One, { type: "toggle", id: 1n }).todos[0]!.done;
+  expect(actual).toEqual(true);
 });

@@ -79,8 +79,8 @@ describe("printer output", () => {
     const { warnings } = emitFor("scratch/failing.ts");
     expect(warnings).toEqual([
       {
-        line: 8,
-        column: 86,
+        line: 19,
+        column: 4,
         length: 6,
         message: "`number` is a type, not a value",
       },

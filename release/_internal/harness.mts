@@ -24,8 +24,8 @@ import {
   lowerBody,
   lowerExpr,
   namespaces,
+  printBody,
   printExpr,
-  printStatement,
   printTest,
   render,
 } from "../vite-plugin/emit/index.mts";
@@ -190,9 +190,15 @@ export const moduleWarnings = (code: string, root?: string): string[] =>
 
 /** The statements `type Subject = …` compiles to, read as a Test node. */
 export const printStatements = (code: string, alias = "Subject"): string[] =>
-  lowerBody(contextFor(code), typeIn(code, alias), false).flatMap(
-    printStatement,
-  );
+  printBody(lowerBody(contextFor(code), typeIn(code, alias), false)).flat();
+
+/**
+ * The `expect` statement alone, for tests about which matcher a condition
+ * prints: what a test takes on beforehand is bound to locals, and those say
+ * nothing about the matcher.
+ */
+export const printMatcher = (code: string, alias = "Subject"): string =>
+  printStatements(code, alias).at(-1)!;
 
 /** The generated test(s) for `export type <alias>`, as source. */
 export const printAlias = (code: string, alias: string): string =>

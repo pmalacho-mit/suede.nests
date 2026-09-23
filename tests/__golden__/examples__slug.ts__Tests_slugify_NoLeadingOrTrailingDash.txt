@@ -12,7 +12,13 @@ function slugify(input: string, maxLength = 64): string {
 }
 
 test("Tests > slugify > NoLeadingOrTrailingDash", () => {
-  expect.soft(slugify("--foo--")).toSatisfy((s: string) => s.startsWith("f"));
-  expect.soft(slugify("--foo--")).toSatisfy((s: string) => s.endsWith("o"));
-  expect.soft(slugify("--foo--")).not.toContain("--");
+  const actual1 = slugify("--foo--");
+  const expected1 = "f";
+  expect.soft(actual1).toSatisfy((s: string) => s.startsWith(expected1));
+  const actual2 = slugify("--foo--");
+  const expected2 = "o";
+  expect.soft(actual2).toSatisfy((s: string) => s.endsWith(expected2));
+  const actual3 = slugify("--foo--");
+  const expected3 = "--";
+  expect.soft(actual3).not.toContain(expected3);
 });

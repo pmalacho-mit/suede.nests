@@ -650,7 +650,7 @@ declare namespace lowerBody {
       [`${Add}type Subject = Expect<Invoke<typeof add, [1, 1]>, "=", 2>;`]
     >,
     "=",
-    ["expect(add(1, 1)).toEqual(2);"]
+    ["const actual = add(1, 1);", "const expected = 2;", "expect(actual).toEqual(expected);"]
   >;
 
   /** the same statement over a promise, which is the only reason to await */
@@ -660,7 +660,11 @@ declare namespace lowerBody {
       [`${AsyncAdd}type Subject = Expect<Invoke<typeof add, [1, 1]>, "=", 2>;`]
     >,
     "=",
-    ["expect(await add(1, 1)).toEqual(2);"]
+    [
+      "const actual = await add(1, 1);",
+      "const expected = 2;",
+      "expect(actual).toEqual(expected);"
+    ]
   >;
 
   /** `Given` runs its effects first, then the test underneath */
@@ -672,7 +676,7 @@ declare namespace lowerBody {
       ]
     >,
     "=",
-    ["add(1, 1);", "expect(1).toBeTruthy();"]
+    ["add(1, 1);", "const actual = 1;", "expect(actual).toBeTruthy();"]
   >;
 
   /** a tuple of expectations is soft, so every one of them reports */
@@ -682,7 +686,14 @@ declare namespace lowerBody {
       [`${Add}type Subject = [Expect<1, "=", 1>, Expect<2, "=", 2>];`]
     >,
     "=",
-    ["expect.soft(1).toEqual(1);", "expect.soft(2).toEqual(2);"]
+    [
+      "const actual1 = 1;",
+      "const expected1 = 1;",
+      "expect.soft(actual1).toEqual(expected1);",
+      "const actual2 = 2;",
+      "const expected2 = 2;",
+      "expect.soft(actual2).toEqual(expected2);"
+    ]
   >;
 
   /** `Throws` on a synchronous call asserts on the call where it stands */
@@ -999,7 +1010,7 @@ declare namespace lowerAlias {
   export type Simple = Expect<
     Invoke<typeof harness.printAlias, [Suite, "Simple"]>,
     "=",
-    '/** four plus five */\ntest("add > Simple", () => {\n  expect(add(4, 5)).toEqual(9);\n});'
+    '/** four plus five */\ntest("add > Simple", () => {\n  const actual = add(4, 5);\n  const expected = 9;\n  expect(actual).toEqual(expected);\n});'
   >;
 
   type AsyncSuite = `
@@ -1016,14 +1027,14 @@ declare namespace lowerAlias {
   export type Awaited_ = Expect<
     Invoke<typeof harness.printAlias, [AsyncSuite, "One"]>,
     "=",
-    'test("load > One", async () => {\n  expect(await load("a")).toEqual("a");\n});'
+    'test("load > One", async () => {\n  const actual = await load("a");\n  const expected = "a";\n  expect(actual).toEqual(expected);\n});'
   >;
 
   /** a table row is a test of its own, indexed by row */
   export type TableRow = Expect<
     Invoke<typeof harness.printAlias, [Suite, "Rows"]>,
     "=",
-    'test("add > Rows[0]", () => {\n  expect(add(1, 1)).toEqual(2);\n});'
+    'test("add > Rows[0]", () => {\n  const actual = add(1, 1);\n  const expected = 2;\n  expect(actual).toEqual(expected);\n});'
   >;
 
   /** `Todo` has no body at all */

@@ -57,5 +57,6 @@ const fixedNow = () => "2026-01-01T00:00:00.000Z";
 test("Tests > UserRepository > FindMissing", async () => {
   const FixedClock: Clock = { now: fixedNow };
   const Repo = new UserRepository(FixedClock);
-  expect(await Repo.find(999)).toBeUndefined();
+  const actual = await Repo.find(999);
+  expect(actual).toBeUndefined();
 });

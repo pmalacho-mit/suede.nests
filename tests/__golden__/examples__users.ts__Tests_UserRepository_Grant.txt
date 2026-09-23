@@ -65,8 +65,13 @@ test("Tests > UserRepository > Grant", async () => {
   const Ada = await Repo.create({ name: "Ada", email: "ada@example.com" });
   await Repo.grant(Ada.id, "admin");
   await Repo.grant(Ada.id, "admin");
-  expect.soft(Ada.roles).toEqual(["admin"]);
+  const actual1 = Ada.roles;
+  const expected1 = ["admin"];
+  expect.soft(actual1).toEqual(expected1);
   expect.soft(Ada).toSatisfy(isAdmin);
-  expect.soft(await Repo.list()).toSatisfy((xs: ArrayLike<any>) => Array.from(xs).some(isAdmin));
-  expect.soft(await Repo.list()).toSatisfy((xs: ArrayLike<any>) => Array.from(xs).every(hasEmailDomain("example.com")));
+  const actual3 = await Repo.list();
+  expect.soft(actual3).toSatisfy((xs: ArrayLike<any>) => Array.from(xs).some(isAdmin));
+  const actual4 = await Repo.list();
+  const expected4 = hasEmailDomain("example.com");
+  expect.soft(actual4).toSatisfy((xs: ArrayLike<any>) => Array.from(xs).every(expected4));
 });

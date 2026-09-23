@@ -12,5 +12,6 @@ function slugify(input: string, maxLength = 64): string {
 }
 
 test("Tests > slugify > Edge[1]", () => {
-  expect(slugify("!!!")).toHaveLength(0);
+  const actual = slugify("!!!");
+  expect(actual).toHaveLength(0);
 });

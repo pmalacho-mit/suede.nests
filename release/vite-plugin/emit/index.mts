@@ -30,6 +30,7 @@ export {
   headerLines,
   needsOf,
   printExpr,
+  printBody,
   printStatement,
   printTest,
 } from "./print.mts";

@@ -24,5 +24,7 @@ test("Tests > cart > Receipt", () => {
   const Cart$ = new Cart();
   Cart$.add(1099);
   Cart$.add(250);
-  expect(Cart$.receipt()).toEqual("$13.49");
+  const actual = Cart$.receipt();
+  const expected = "$13.49";
+  expect(actual).toEqual(expected);
 });

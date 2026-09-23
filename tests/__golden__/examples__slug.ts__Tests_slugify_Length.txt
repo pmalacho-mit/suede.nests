@@ -13,5 +13,7 @@ function slugify(input: string, maxLength = 64): string {
 
 /** `maxLength` is a hard cap. */
 test("Tests > slugify > Length", () => {
-  expect(slugify("a very long title that goes on and on and on and on and on and on", 16).length).toBeLessThanOrEqual(16);
+  const actual = slugify("a very long title that goes on and on and on and on and on and on", 16).length;
+  const expected = 16;
+  expect(actual).toBeLessThanOrEqual(expected);
 });

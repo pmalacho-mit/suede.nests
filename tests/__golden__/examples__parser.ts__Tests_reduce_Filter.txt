@@ -41,5 +41,7 @@ function reduce(state: State, action: Action): State {
 
 test("Tests > reduce > Filter", () => {
   const Empty: State = { todos: [], filter: "all" };
-  expect(reduce(Empty, { type: "filter", filter: "done" }).filter).toEqual("done");
+  const actual = reduce(Empty, { type: "filter", filter: "done" }).filter;
+  const expected = "done";
+  expect(actual).toEqual(expected);
 });

@@ -13,5 +13,7 @@ function slugify(input: string, maxLength = 64): string {
 
 /** Diacritics are stripped rather than dropped. */
 test("Tests > slugify > Diacritics", () => {
-  expect(slugify("Crème Brûlée")).toEqual("creme-brulee");
+  const actual = slugify("Crème Brûlée");
+  const expected = "creme-brulee";
+  expect(actual).toEqual(expected);
 });

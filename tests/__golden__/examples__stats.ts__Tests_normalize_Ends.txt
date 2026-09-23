@@ -18,6 +18,10 @@ function normalize(xs: readonly number[]): Float64Array {
 
 test("Tests > normalize > Ends", () => {
   const N = normalize([1, 2, 3]);
-  expect.soft(Math.abs(N[0]! - -1.224744871391589)).toBeLessThanOrEqual(1e-12);
-  expect.soft(Math.abs(N[2]! - 1.224744871391589)).toBeLessThanOrEqual(1e-12);
+  const actual1 = N[0]!;
+  const expected1 = -1.224744871391589;
+  expect.soft(Math.abs(actual1 - expected1)).toBeLessThanOrEqual(1e-12);
+  const actual2 = N[2]!;
+  const expected2 = 1.224744871391589;
+  expect.soft(Math.abs(actual2 - expected2)).toBeLessThanOrEqual(1e-12);
 });

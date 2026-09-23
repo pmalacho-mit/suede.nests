@@ -73,5 +73,7 @@ function parse(src: string): Expr {
 
 /** Precedence: `*` binds tighter than `+`. Nested literal objects materialize as plain objects. */
 test("Tests > parse > Precedence", () => {
-  expect(parse("1 + 2 * 3")).toEqual({ kind: "bin", op: "+", left: { kind: "num", value: 1 }, right: { kind: "bin", op: "*", left: { kind: "num", value: 2 }, right: { kind: "num", value: 3 } } });
+  const actual = parse("1 + 2 * 3");
+  const expected = { kind: "bin", op: "+", left: { kind: "num", value: 1 }, right: { kind: "bin", op: "*", left: { kind: "num", value: 2 }, right: { kind: "num", value: 3 } } };
+  expect(actual).toEqual(expected);
 });

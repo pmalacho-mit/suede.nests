@@ -49,7 +49,7 @@ test("scratch/failing.ts: four failures, with alias-line locations and sidecar o
   expect(results[3]?.failureMessages[0]).toContain(
     "cannot materialize `number`",
   );
-  expect(results.map((r) => r.location?.line)).toEqual([5, 7, 8, 9]);
+  expect(results.map((r) => r.location?.line)).toEqual([9, 11, 16, 17]);
 
   const side = readJson(path.join(out, ".derived/results.json")) as {
     results: ResultRecord[];

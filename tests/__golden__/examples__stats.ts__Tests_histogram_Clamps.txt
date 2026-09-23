@@ -16,5 +16,7 @@ function histogram(
 }
 
 test("Tests > histogram > Clamps", () => {
-  expect(Array.from(histogram([-100, 100], 2, 0, 10))).toEqual([1, 1]);
+  const actual = Array.from(histogram([-100, 100], 2, 0, 10));
+  const expected = [1, 1];
+  expect(actual).toEqual(expected);
 });

@@ -29,5 +29,7 @@ function evaluate(e: Expr): number {
 }
 
 test("Tests > evaluate > Cases[1]", () => {
-  expect(evaluate({ kind: "neg", expr: { kind: "num", value: 2 } })).toEqual(-2);
+  const actual = evaluate({ kind: "neg", expr: { kind: "num", value: 2 } });
+  const expected = -2;
+  expect(actual).toEqual(expected);
 });

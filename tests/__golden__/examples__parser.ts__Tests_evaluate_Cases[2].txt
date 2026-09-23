@@ -29,5 +29,7 @@ function evaluate(e: Expr): number {
 }
 
 test("Tests > evaluate > Cases[2]", () => {
-  expect(Math.abs(evaluate({ kind: "bin", op: "/", left: { kind: "num", value: 1 }, right: { kind: "num", value: 3 } }) - 0.3333333333333333)).toBeLessThanOrEqual(1e-12);
+  const actual = evaluate({ kind: "bin", op: "/", left: { kind: "num", value: 1 }, right: { kind: "num", value: 3 } });
+  const expected = 0.3333333333333333;
+  expect(Math.abs(actual - expected)).toBeLessThanOrEqual(1e-12);
 });

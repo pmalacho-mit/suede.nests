@@ -6,5 +6,7 @@ function truncate(input: string, max: number, ellipsis = "…"): string {
 }
 
 test("Tests > truncate > Short", () => {
-  expect(truncate("hi", 10)).toEqual("hi");
+  const actual = truncate("hi", 10);
+  const expected = "hi";
+  expect(actual).toEqual(expected);
 });

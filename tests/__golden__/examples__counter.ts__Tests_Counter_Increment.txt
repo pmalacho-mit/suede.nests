@@ -34,6 +34,10 @@ class Counter {
 test("Tests > Counter > Increment", () => {
   const Counter$ = new Counter(10, 2);
   Counter$.increment(3);
-  expect.soft(Counter$.count).toEqual(16);
-  expect.soft(Counter$.history).toEqual([12, 14, 16]);
+  const actual1 = Counter$.count;
+  const expected1 = 16;
+  expect.soft(actual1).toEqual(expected1);
+  const actual2 = Counter$.history;
+  const expected2 = [12, 14, 16];
+  expect.soft(actual2).toEqual(expected2);
 });

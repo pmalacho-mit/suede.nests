@@ -11,5 +11,7 @@ function stddev(xs: readonly number[]): number {
 }
 
 test("Tests > stddev > Textbook", () => {
-  expect(stddev([2, 4, 4, 4, 5, 5, 7, 9])).toEqual(2);
+  const actual = stddev([2, 4, 4, 4, 5, 5, 7, 9]);
+  const expected = 2;
+  expect(actual).toEqual(expected);
 });

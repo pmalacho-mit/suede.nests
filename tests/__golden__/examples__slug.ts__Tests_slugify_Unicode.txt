@@ -12,5 +12,6 @@ function slugify(input: string, maxLength = 64): string {
 }
 
 test.skip("Tests > slugify > Unicode", () => {
-  expect(slugify("日本語")).not.toHaveLength(0);
+  const actual = slugify("日本語");
+  expect(actual).not.toHaveLength(0);
 });

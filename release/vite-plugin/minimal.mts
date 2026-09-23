@@ -346,7 +346,7 @@ declare namespace minimalFor {
   export type KeepsBody = Expect<
     Reset,
     "includes",
-    "expect.soft(Counter$.history).not.toContain(12);"
+    "const actual3 = Counter$.history;\n  const expected3 = 12;\n  expect.soft(actual3).not.toContain(expected3);"
   >;
 
   /** which is an ordinary Vitest file: imports first, test last */
