@@ -45,13 +45,9 @@ export function findLibrary(folder: string): Library | null {
         continue;
       }
       if (entry.name !== DSL) continue;
-      // The command line sits beside the DSL; a library from before it moved
-      // keeps it in `vite-plugin/`.
-      const cli = [
-        path.join(dir, "cli.mts"),
-        path.join(dir, "vite-plugin", "cli.mts"),
-      ].find((candidate) => fs.existsSync(candidate));
-      if (cli) {
+      // the command line sits beside the DSL
+      const cli = path.join(dir, "cli.mts");
+      if (fs.existsSync(cli)) {
         library = {
           root: dir,
           minimal: cli,
