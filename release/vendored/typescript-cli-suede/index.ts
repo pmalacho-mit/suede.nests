@@ -399,8 +399,7 @@ const withPositional = <T extends object>(
  *   looks like a flag.
  * - Unrecognized `-…` arguments are ignored rather than collected as positional.
  *
- * @returns flag values as named properties, positionals via iteration — see
- * {@link Result.Cli}.
+ * @returns flag values as named properties, positionals via iteration — see {@link Result.Cli}.
  */
 export const main = <Flags extends Flag[]>(
   argv: string[],

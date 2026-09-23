@@ -33,14 +33,11 @@ const DESCRIPTION = [
   "  cli.mts <file> --collector        the module Vitest is handed for the file",
 ].join("\n");
 
-/** What to print for a file: one test, one test as served, or the whole file. */
-export type Mode = "test" | "served" | "collector";
-
 /**
  * What was asked for, read off an argv. Kept apart from acting on it, so the
- * reading can be tested without a process to exit.
+ * reading can be tested without a process.
  */
-export function request(argv: string[]) {
+const parse = (argv: string[]) => {
   const args = main(argv, DESCRIPTION, [
     cli.flag(
       ["runtime", "r"],
@@ -58,45 +55,42 @@ export function request(argv: string[]) {
       false,
     ),
   ]);
-  const mode: Mode = args.collector
-    ? "collector"
-    : args.served
-      ? "served"
-      : "test";
   return {
     file: args[0],
     test: args[1],
-    mode,
+    mode: args.collector ? "collector" : args.served ? "served" : "test",
     root: args.root,
     runtime: args.runtime,
     help: args.help,
-  };
-}
+  } as const;
+};
 
-declare namespace request {
+type Parsed = ReturnType<typeof parse>;
+
+declare namespace parse {
   /** a file and a test: the test, as it would be extracted */
   export type Test = Expect<
-    Invoke<typeof request, [["src/a.ts", "a > B"]]>,
+    Invoke<typeof parse, [["src/a.ts", "a > B"]]>,
     "matches",
     { file: "src/a.ts"; test: "a > B"; mode: "test" }
   >;
 
   export type Served = Expect<
-    Invoke<typeof request, [["src/a.ts", "a > B", "--served"]]>,
+    Invoke<typeof parse, [["src/a.ts", "a > B", "--served"]]>,
     "matches",
     { mode: "served" }
   >;
 
   /** the whole file needs no test to be named */
   export type Collector = Expect<
-    Invoke<typeof request, [["src/a.ts", "--collector"]]>,
+    Invoke<typeof parse, [["src/a.ts", "--collector"]]>,
     "matches",
     { file: "src/a.ts"; test: undefined; mode: "collector" }
   >;
 
   /** a flag may come first: a boolean takes nothing from what follows it */
   export type FlagFirst = Expect<
-    Invoke<typeof request, [["--collector", "src/a.ts"]]>,
+    Invoke<typeof parse, [["--collector", "src/a.ts"]]>,
     "matches",
     { file: "src/a.ts"; mode: "collector" }
   >;
@@ -104,7 +98,7 @@ declare namespace request {
   /** a flag's value is its own, not the next positional */
   export type Runtime = Expect<
     Invoke<
-      typeof request,
+      typeof parse,
       [["src/a.ts", "a > B", "--runtime", "../vite-plugin/runtime.mts"]]
     >,
     "matches",
@@ -112,51 +106,59 @@ declare namespace request {
   >;
 }
 
-if (cli.entry(import.meta.url)) {
-  // Most of what a cold run costs is Node compiling the library — TypeScript is
-  // about 10MB to parse — so the compiled form is kept between runs. A caller
-  // that knows better says so with `NODE_COMPILE_CACHE`, which Node reads
-  // before any of this is loaded and which therefore caches more; this is what
-  // makes the command fast on its own.
+const tryCacheNodeCompilation = () => {
   ensureDerived();
   if (!process.env.NODE_COMPILE_CACHE)
     module.enableCompileCache?.(compileCacheDir);
+};
 
-  const { file, test, mode, root, runtime, help } = request(
-    process.argv.slice(2),
-  );
+const nullPrefixed = <T extends string>(str: T) => `\0${str}` as const;
+
+/**
+ * The whole file, and a test as served, are filed under names no test can
+ * have, so they never land on a test's own entry.
+ */
+const cacheName = ({ mode, test }: Pick<Parsed, "mode" | "test">) =>
+  mode === "collector"
+    ? nullPrefixed(mode)
+    : mode === "served"
+      ? nullPrefixed(`served ${test}`)
+      : test!;
+
+const tryRetrieveFromCache = ({ file, mode, test, root, runtime }: Parsed) => {
+  if (!file || !fs.existsSync(file)) return { key: null, hit: null };
+  const source = fs.readFileSync(path.resolve(file), "utf8");
+  const key = cacheKey(source, cacheName({ mode, test }), root, runtime);
+  return { key, hit: read(key) };
+};
+
+if (cli.entry(import.meta.url)) {
+  tryCacheNodeCompilation();
+
+  const parsed = parse(process.argv.slice(2));
+  const { file, test, mode, help } = parsed;
+
   if (!file || (mode !== "collector" && !test)) {
     console.error(help());
     process.exit(2);
   }
 
-  const source = fs.existsSync(file)
-    ? fs.readFileSync(path.resolve(file), "utf8")
-    : null;
-
-  // The whole file, and a test as served, are filed under names no test can
-  // have, so they never land on a test's own entry.
-  const name =
-    mode === "collector"
-      ? "\0collector"
-      : mode === "served"
-        ? `\0served ${test}`
-        : test!;
-  const key = source === null ? null : cacheKey(source, name, root, runtime);
-  const hit = key === null ? null : read(key);
+  const { hit, key } = tryRetrieveFromCache(parsed);
 
   if (hit !== null) process.stdout.write(hit);
   else {
-    // only now is a compiler worth its quarter of a second
     const printer = await import("./vite-plugin/minimal.mts");
     const text =
       mode === "collector"
-        ? printer.collectorFor(file, { root, runtime })
+        ? printer.collectorFor(file, parsed)
         : mode === "served"
-          ? await printer.servedFor(file, test!, { root, runtime })
-          : printer.minimalFor(file, test!, { root, runtime });
-    // `minimalFor` files its own answer; the other two are filed here
+          ? await printer.servedFor(file, test!, parsed)
+          : printer.minimalFor(file, test!, parsed);
+
+    // `minimalFor` caches its own answer...
+    // but `collectorFor` and `servedFor` don't, so do it here
     if (key && mode !== "test") write(key, text);
+
     process.stdout.write(text);
   }
 }
