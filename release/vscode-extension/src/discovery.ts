@@ -89,7 +89,7 @@ declare namespace renamed {
 /** A string literal, whatever quotes it was written with. */
 const literal = (node: ts.TypeNode | undefined) =>
   node && ts.isLiteralTypeNode(node) && ts.isStringLiteral(node.literal)
-    ? node.literal.text
+    ? node.literal
     : null;
 
 /**
@@ -97,14 +97,16 @@ const literal = (node: ts.TypeNode | undefined) =>
  * either the page itself, or a `Config` that names it. Nested modifiers are
  * looked through, so `Skip<Expect<…, "./page.html">>` still has one.
  */
-const displayIn = (type: ts.TypeNode | undefined): string | null => {
+const displayIn = (
+  type: ts.TypeNode | undefined,
+): ts.StringLiteral | null => {
   if (!type) return null;
   if (ts.isTupleTypeNode(type))
     return type.elements.map(displayIn).find(Boolean) ?? null;
   if (!ts.isTypeReferenceNode(type)) return null;
   for (const arg of type.typeArguments ?? []) {
     const page = literal(arg);
-    if (page?.endsWith(".html")) return page;
+    if (page?.text.endsWith(".html")) return page;
     if (ts.isTypeLiteralNode(arg))
       for (const member of arg.members)
         if (
@@ -173,6 +175,8 @@ export type DiscoveredTest = {
    * source, so the editor can offer it before anything has run.
    */
   display: string | null;
+  /** Where that page is named: the string literal, quotes and all, 0-based. */
+  displayAt: { line: number; column: number; length: number } | null;
 };
 
 const discovered = (
@@ -183,12 +187,24 @@ const discovered = (
   const { line, character } = source.getLineAndCharacterOfPosition(
     statement.name.getStart(source),
   );
+  const page = displayIn(statement.type);
+  const at = page
+    ? source.getLineAndCharacterOfPosition(page.getStart(source))
+    : null;
   return {
     path,
     line,
     name: [...path, statement.name.text].join(" > "),
     alias: statement.name.text,
-    display: displayIn(statement.type),
+    display: page?.text ?? null,
+    displayAt:
+      page && at
+        ? {
+            line: at.line,
+            column: at.character,
+            length: page.getEnd() - page.getStart(source),
+          }
+        : null,
     column: character,
     length: statement.name.text.length,
     source: statement.getText(source).trim(),
@@ -383,6 +399,18 @@ declare namespace histogram {
   export type Plain = Expect<1, "=", 1>;
 }
 `;
+
+  /** where the page is named, so a missing one can be marked there */
+  export type Located = Expect<
+    Invoke<typeof discover, ["probe.ts", Suite]>,
+    "matches",
+    [
+      { alias: "Visual"; displayAt: { line: 3; column: 41; length: 14 } },
+      { alias: "Configured"; displayAt: { line: 4; column: 56; length: 13 } },
+      { alias: "Skipped"; displayAt: { line: 5; column: 47; length: 16 } },
+      { alias: "Plain"; displayAt: null }
+    ]
+  >;
 
   /** written as the page, as a config that names one, or under a modifier */
   export type Pages = Expect<

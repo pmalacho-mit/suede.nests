@@ -2,7 +2,7 @@
   "name": "namespace-tests",
   "displayName": "Namespace Tests",
   "description": "Type-level tests in the editor: run them from the line you wrote them on.",
-  "version": "0.22.1",
+  "version": "0.23.0",
   "publisher": "pmalacho-mit",
   "engines": {
     "vscode": "^1.88.0"

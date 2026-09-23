@@ -38,7 +38,10 @@ line you wrote it on. Running one runs exactly that one.
   before the page has finished loading and you are sent
   `namespace-tests:result` — no need to announce yourself, though a page that
   does, through `window.parent`, still works even where the editor hides it — with `actual`, `expected`, `passed`, `condition`,
-  `message` and `meta`. Only JSON crosses into a webview, so the values travel
+  `message` and `meta`. The page is found relative to the test's file; one
+  that is not there is marked as an error on the string that names it — a test
+  does not fail for it, so that is where you would notice. Only JSON crosses
+  into a webview, so the values travel
   encoded and are decoded in the page by the same codec that wrote them — a
   `Uint8Array`, a `Map` or a `bigint` arrives as itself. Re-running redraws the
   page from disk, so it starts clean.

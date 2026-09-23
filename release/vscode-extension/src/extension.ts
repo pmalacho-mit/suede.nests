@@ -11,7 +11,13 @@ import os from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
 
-import { discover, hasTests, nameKey, testFilter } from "./discovery.js";
+import {
+  discover,
+  hasTests,
+  nameKey,
+  testFilter,
+  type DiscoveredTest,
+} from "./discovery.js";
 import { parseWithTypeScriptOf } from "./typescript.js";
 import { findLibrary, forgetLibrary, type Library } from "./library.js";
 import { render } from "./display.js";
@@ -51,8 +57,15 @@ export function activate(context: vscode.ExtensionContext): void {
   compiledModules = path.join(context.globalStorageUri.fsPath, "node");
   const controller = vscode.tests.createTestController(ID, "Namespace Tests");
   const diagnostics = vscode.languages.createDiagnosticCollection(ID);
+  /**
+   * Display pages a test names that are not there. Kept apart from the
+   * printer's diagnostics, which are rewritten wholesale from its own file.
+   */
+  const missingPages = vscode.languages.createDiagnosticCollection(
+    `${ID}.display`,
+  );
   const output = vscode.window.createOutputChannel("Namespace Tests");
-  context.subscriptions.push(controller, diagnostics, output);
+  context.subscriptions.push(controller, diagnostics, missingPages, output);
 
   /** What each test is doing, keyed by test id. Drives the lenses. */
   const outcomes = new Map<string, Outcome>();
@@ -91,6 +104,31 @@ export function activate(context: vscode.ExtensionContext): void {
     return false;
   };
 
+  /**
+   * Mark every display page a file names that is not there, on the string that
+   * names it. A test does not fail for it — the page is only ever looked at in
+   * the editor — so this is the one place it would be noticed.
+   */
+  const checkPages = (uri: vscode.Uri, tests: DiscoveredTest[]) => {
+    const dir = path.dirname(uri.fsPath);
+    missingPages.set(
+      uri,
+      tests.flatMap((test) => {
+        if (!test.display || !test.displayAt) return [];
+        const page = path.resolve(dir, test.display);
+        if (fs.existsSync(page)) return [];
+        const { line, column, length } = test.displayAt;
+        const diagnostic = new vscode.Diagnostic(
+          new vscode.Range(line, column, line, column + length),
+          `No display page at ${vscode.workspace.asRelativePath(page)}. It is looked for relative to this file.`,
+          vscode.DiagnosticSeverity.Error,
+        );
+        diagnostic.source = ID;
+        return [diagnostic];
+      }),
+    );
+  };
+
   const load = (uri: vscode.Uri, text?: string) => {
     let source: string;
     try {
@@ -100,9 +138,11 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     if (!hasTests(source) || !parsable(uri)) {
       controller.items.delete(uri.toString());
+      missingPages.delete(uri);
       return [];
     }
     const tests = discover(uri.fsPath, source);
+    checkPages(uri, tests);
     const file =
       controller.items.get(uri.toString()) ??
       controller.createTestItem(
@@ -692,6 +732,19 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(forgetLibrary),
   );
+
+  // A page can go missing — or turn up — without the file that names it
+  // changing at all: moving it is enough. So every open file with tests is
+  // looked at again when a page appears or disappears.
+  const pagesWatcher = vscode.workspace.createFileSystemWatcher("**/*.html");
+  const recheckPages = () => {
+    for (const document of vscode.workspace.textDocuments)
+      if (document.uri.scheme === "file" && hasTests(document.getText()))
+        load(document.uri, document.getText());
+  };
+  pagesWatcher.onDidCreate(recheckPages);
+  pagesWatcher.onDidDelete(recheckPages);
+  context.subscriptions.push(pagesWatcher);
 
   void controller.resolveHandler(undefined);
   for (const document of vscode.workspace.textDocuments) autoRun(document);
