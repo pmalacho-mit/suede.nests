@@ -31,14 +31,25 @@ const normalize = (body: string) => body.replace(/\s*$/, "\n");
 const fingerprint = (body: string) =>
   createHash("sha256").update(normalize(body)).digest("hex").slice(0, 12);
 
-/** Everything below the two header lines and the blank line after them. */
-const bodyOf = (text: string) => text.split("\n").slice(3).join("\n");
+/** Everything below the header lines and the blank line after them. */
+const bodyOf = (text: string) =>
+  text.split("\n").slice(text.split("\n").indexOf("") + 1).join("\n");
 
 /**
  * The extracted file: a header saying where it came from, then the test. The
  * header carries the body's fingerprint, which is how deleting one later can
  * tell an untouched file from one that has been worked on.
  */
+/**
+ * A run gives every test its own copy of the modules its subject reaches, so
+ * state cannot cross from one test to the next. A file holds one module, so
+ * several tests in one extract share what they import — which changes what they
+ * see, and is worth saying where it is true.
+ */
+const sharesImports = (body: string) =>
+  (body.match(/^test[.(]/gm) ?? []).length > 1 &&
+  /^import .*from ["']\./m.test(body);
+
 export function extract(
   source: string,
   testName: string,
@@ -47,6 +58,9 @@ export function extract(
   return [
     `// ${MARK} ${source} > ${JSON.stringify(testName)} [${fingerprint(body)}]`,
     `// Yours to run, debug and edit. Delete it when you are done.`,
+    ...(sharesImports(body)
+      ? ["// These tests share what they import; a run gives each its own copy."]
+      : []),
     "",
     normalize(body),
   ].join("\n");
@@ -114,6 +128,40 @@ declare namespace extracted {
     Invoke<typeof extracted, [Worked]>,
     "matches",
     { edited: true }
+  >;
+
+  /** several tests in one file share what they import, and it says so */
+  export type Warns = Expect<
+    Invoke<
+      typeof extract,
+      [
+        "src/a.ts",
+        "a > Rows",
+        'import { f } from "./m.ts";\ntest("one", () => {});\ntest("two", () => {});'
+      ]
+    >,
+    "includes",
+    "These tests share what they import"
+  >;
+
+  /** one test has nothing to share with, so it is not told about it */
+  export type Quiet = Expect<
+    Invoke<
+      typeof extract,
+      ["src/a.ts", "a > One", 'import { f } from "./m.ts";\ntest("one", () => {});']
+    >,
+    "excludes",
+    "share what they import"
+  >;
+
+  /** nor is a file whose tests import nothing of yours */
+  export type NoImports = Expect<
+    Invoke<
+      typeof extract,
+      ["src/a.ts", "a > Rows", 'test("one", () => {});\ntest("two", () => {});']
+    >,
+    "excludes",
+    "share what they import"
   >;
 
   /** anything else is just a file */

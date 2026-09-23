@@ -12,7 +12,8 @@ import ts from "typescript";
 import path from "node:path";
 import fs from "node:fs";
 import { cacheKey, read, write } from "./cache.mts";
-import { collected, collectorLines, idFor } from "./collector.mts";
+import { SUFFIX, collected, collectorLines, idFor } from "./collector.mts";
+import { fork } from "./fork.mts";
 import {
   allNeeds,
   emitTests,
@@ -274,6 +275,51 @@ declare namespace collectorFor {
     "includes",
     "counter.Tests_Counter_Chainable.namespace.test.ts"
   >;
+}
+
+/**
+ * What the plugin serves for a test: the reproduction, with every first-party
+ * import carrying the test's tag so it gets its own copy of that module.
+ *
+ * A name that stands for several tests — a `Table<…>` alias — is several
+ * modules, not one, which is the difference an extracted file flattens: each is
+ * printed under the id it is served as.
+ */
+export async function servedFor(
+  file: string,
+  testName: string,
+  options: {
+    root?: string | undefined;
+    tsconfig?: string | undefined;
+    runtime?: string | undefined;
+    input?: EmitInput | undefined;
+  } = {},
+): Promise<string> {
+  const abs = path.resolve(file);
+  const program =
+    options.input?.program ?? programFor(abs, configFor(options.tsconfig ?? "tsconfig.json"));
+  const sf = options.input?.source ?? program.getSourceFile(abs);
+  if (!sf) throw new Error(`cannot load ${file}`);
+  const { tests } = emittedFor({ program, source: sf }, options.root, options.runtime);
+  const wanted = testNameKey(testName);
+  const names = tests
+    .filter(
+      (t) =>
+        testNameKey(t.name) === wanted ||
+        t.alias === testName ||
+        testNameKey(t.name).startsWith(`${wanted}[`),
+    )
+    .map((t) => t.name);
+  if (!names.length) throw new Error(`no test named ${testName} in ${file}`);
+
+  const modules = await Promise.all(
+    names.map(async (name) => {
+      const id = idFor(abs, name);
+      const code = minimalFor(file, name, { ...options, input: { program, source: sf } });
+      return `// ${path.basename(id)}\n${await fork(code, path.basename(id, SUFFIX))}`;
+    }),
+  );
+  return modules.join("\n");
 }
 
 export function minimalFor(

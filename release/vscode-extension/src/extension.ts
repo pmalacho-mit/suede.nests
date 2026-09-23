@@ -502,6 +502,41 @@ export function activate(context: vscode.ExtensionContext): void {
         );
     }),
 
+    /**
+     * What a run makes of the test this file came from. A file holds one
+     * module; a run serves each test its own, with every first-party import
+     * carrying that test's tag — which is the difference an extracted file
+     * flattens, and the reason several tests in one of them share state.
+     */
+    vscode.commands.registerCommand(`${ID}.showServed`, async (uri: vscode.Uri) => {
+      const mine = extracted(contentsOf(uri));
+      if (!mine) return;
+      const origin = vscode.Uri.file(
+        path.resolve(folderOf(uri), mine.source),
+      );
+      let text: string;
+      try {
+        text = await served(origin, mine.test, output);
+      } catch (error) {
+        output.appendLine(String(error));
+        output.show(true);
+        void vscode.window.showErrorMessage(
+          `Could not read what Vitest runs for ${mine.test}. See the Namespace Tests output.`,
+        );
+        return;
+      }
+      collectors.set(uri.fsPath, text);
+      const right = uri.with({ scheme: COLLECTOR, query: `${Date.now()}` });
+      onCollectorChange.fire(right);
+      await vscode.commands.executeCommand(
+        "vscode.diff",
+        uri,
+        right,
+        `${path.basename(uri.fsPath)} ↔ what Vitest runs`,
+        { preview: true },
+      );
+    }),
+
     /** Throw it away — asking first if it is no longer what was generated. */
     vscode.commands.registerCommand(`${ID}.deleteExtracted`, async (uri: vscode.Uri) => {
       const mine = extracted(contentsOf(uri));
@@ -541,6 +576,7 @@ export function activate(context: vscode.ExtensionContext): void {
             ["$(play) Run", `${ID}.runExtracted`],
             ["$(debug-alt) Debug", `${ID}.debugExtracted`],
             ["$(trash) Delete", `${ID}.deleteExtracted`],
+            ["$(diff) What Vitest sees", `${ID}.showServed`],
           ];
           return actions.map(
             ([title, command]) =>
@@ -821,6 +857,7 @@ async function ask(
   uri: vscode.Uri,
   what: string,
   output: vscode.OutputChannel,
+  extra: string[] = [],
 ): Promise<string> {
   const cwd = folderOf(uri);
   const configured = vscode.workspace
@@ -845,7 +882,13 @@ async function ask(
         const runtime = runtimeSpecifier(library, uri.fsPath);
         return [
           "node",
-          [library.minimal, file, what, ...(runtime ? ["--runtime", runtime] : [])],
+          [
+            library.minimal,
+            file,
+            what,
+            ...extra,
+            ...(runtime ? ["--runtime", runtime] : []),
+          ],
         ] as const;
       })();
 
@@ -875,6 +918,13 @@ const minimal = (
 /** The whole file, as Vitest is handed it. */
 const collector = (uri: vscode.Uri, output: vscode.OutputChannel) =>
   ask(uri, "--collector", output);
+
+/** One test, as a run serves it: forked imports and all. */
+const served = (
+  uri: vscode.Uri,
+  name: string,
+  output: vscode.OutputChannel,
+) => ask(uri, name, output, ["--served"]);
 
 function exec(
   command: string,

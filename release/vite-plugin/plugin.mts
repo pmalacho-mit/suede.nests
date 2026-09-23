@@ -7,14 +7,13 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import picomatch from "picomatch";
 import { encode } from "@jridgewell/sourcemap-codec";
-import { init, parse } from "es-module-lexer";
 import { DERIVED, ensureDerived } from "./cache.mts";
 import { SUFFIX, collected, collectorLines, idFor } from "./collector.mts";
+import { FORK, fork, forkOf } from "./fork.mts";
 import { emittedFor, minimalFor } from "./minimal.mts";
 
 import type { Plugin, ViteUserConfig } from "vitest/config";
 import type { SourceMapSegment } from "@jridgewell/sourcemap-codec";
-import type { ImportSpecifier } from "es-module-lexer";
 import type { Warning } from "./emit/index.mts";
 import type { Expect, Invoke } from "../dsl.import.meta.vitest.ts";
 
@@ -281,15 +280,6 @@ export default function namespaceTests({
   /** `-t` from the command line: generate only the tests that will run. */
   let only: RegExp | null = null;
 
-  const FORK = "namespace-test";
-
-  /** The fork a module id belongs to, if any. */
-  const forkOf = (id: string) => {
-    const [file = "", query = ""] = id.split("?");
-    const tag = new URLSearchParams(query).get(FORK);
-    return tag ? { file, tag } : null;
-  };
-
   /**
    * Give a module's own imports the fork's tag, so each test gets its own
    * instance of everything first-party that its subject reaches — unless the
@@ -305,36 +295,6 @@ export default function namespaceTests({
     return shared(rel);
   };
 
-  /**
-   * Give a module's own imports the fork's tag. The specifiers come from the
-   * module's own import statements, as `es-module-lexer` reads them off — never
-   * by matching text: a string that merely *looks* like an import, a snippet of
-   * source held in a constant say, must be left alone.
-   */
-  async function fork(code: string, tag: string): Promise<string> {
-    let imports: readonly ImportSpecifier[];
-    try {
-      await init;
-      [imports] = parse(code);
-    } catch {
-      return code; // not lexable here; leave it to the rest of the pipeline
-    }
-    let out = "";
-    let last = 0;
-    // the lexer reports them in source order, so one pass rewrites them all
-    for (const { n: spec, s: start, e: end, d: dynamic } of imports) {
-      // `n` is undefined for `import.meta` and for a dynamic specifier that is
-      // not a plain string — neither names a module we could fork
-      if (!spec?.startsWith(".")) continue;
-      const tagged = `${spec}${spec.includes("?") ? "&" : "?"}${FORK}=${tag}`;
-      // a static import's span is the specifier inside its quotes; a dynamic
-      // one's is the whole literal, which may be a template
-      out += code.slice(last, start);
-      out += dynamic > -1 ? JSON.stringify(tagged) : tagged;
-      last = end;
-    }
-    return out + code.slice(last);
-  }
 
   /** The program the plugin already built, if it holds `file`. */
   const sourceFor = (file: string) => {

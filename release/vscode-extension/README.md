@@ -14,7 +14,12 @@ line you wrote it on. Running one runs exactly that one.
 - **Extract** — writes the test out as a real file beside the module it came
   from (`counter.Counter_Chainable.temp.ts`) and opens it: the part of your
   module the test needs, then the test.
-- **Run · Debug · Delete** — at the top of an extracted file. *Run* is verbose,
+- **Run · Debug · Delete · What Vitest sees** — at the top of an extracted
+  file. The last diffs your copy against what a run actually serves for that
+  test, where every first-party import carries the test's tag: a run gives each
+  test its own copy of the modules it reaches, and a file can only hold one. So
+  a table extracted into one file shares what a run would have kept apart —
+  which is why the header says so when it can bite. *Run* is verbose,
   so every test in the file reports by name. *Debug* launches Vitest under the
   Node debugger on that one file, in a single process, with no test timeout, so
   a breakpoint you are sat on is not a failure. That is where you go to see what

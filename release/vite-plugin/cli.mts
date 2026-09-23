@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // `nt-minimal <file> <test> [--runtime <specifier>] [--root <namespace>]`
+// `nt-minimal <file> <test> --served`
 // `nt-minimal <file> --collector`
 //
-// Prints one test as a standalone file — or, with `--collector`, the module
-// Vitest is handed for that file: your code, plus the block that pulls in the
-// generated tests. Anything the plugin has already printed is answered from
+// Prints one test as a standalone file — with `--served`, as the plugin serves
+// it, every first-party import carrying the test's tag; or, with `--collector`,
+// the module Vitest is handed for the file itself: your code, plus the block
+// that pulls in the generated tests. Anything the plugin has already printed is answered from
 // the cache without loading TypeScript at all, which is the difference between
 // 40ms and a second.
 import fs from "node:fs";
@@ -31,6 +33,7 @@ const [file, testName] = args.filter(
   (arg, index) => !arg.startsWith("--") && !args[index - 1]?.startsWith("--"),
 );
 const wholeFile = args.includes("--collector");
+const served = args.includes("--served");
 
 if (!file || (!testName && !wholeFile)) {
   console.error(
@@ -51,7 +54,12 @@ const source = fs.existsSync(file)
 const key =
   source === null
     ? null
-    : cacheKey(source, wholeFile ? "\0collector" : testName!, root, runtime);
+    : cacheKey(
+        source,
+        wholeFile ? "\0collector" : served ? `\0served ${testName}` : testName!,
+        root,
+        runtime,
+      );
 const hit = key === null ? null : read(key);
 
 if (hit !== null) {
@@ -60,6 +68,11 @@ if (hit !== null) {
   // only now is a compiler worth its quarter of a second
   const { collectorFor } = await import("./minimal.mts");
   const text = collectorFor(file, { root, runtime });
+  if (key) write(key, text);
+  process.stdout.write(text);
+} else if (served) {
+  const { servedFor } = await import("./minimal.mts");
+  const text = await servedFor(file, testName!, { root, runtime });
   if (key) write(key, text);
   process.stdout.write(text);
 } else {

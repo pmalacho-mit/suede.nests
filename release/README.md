@@ -183,6 +183,13 @@ nt-minimal src/counter.ts "Counter > Chainable" [--runtime <spec>] [--root <ns>]
 has to match what the plugin uses, or the answer is printed afresh rather than
 read back — the editor passes it for you.
 
+What you get is the test, not quite what a run serves: a run also gives each
+test its own copy of the first-party modules it reaches, by tagging their
+specifiers. `--served` prints that form instead, and shows a table for what it
+is — one module per row, not one file with several tests in it. It matters when
+the modules under test hold state, which is why an extract of several tests says
+so in its header.
+
 ## Where things are written
 
 One directory, and it is not in your project: **`.derived/`, inside the

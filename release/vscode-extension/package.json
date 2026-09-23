@@ -2,7 +2,7 @@
   "name": "namespace-tests",
   "displayName": "Namespace Tests",
   "description": "Type-level tests in the editor: run them from the line you wrote them on.",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "publisher": "pmalacho-mit",
   "engines": {
     "vscode": "^1.88.0"
@@ -48,6 +48,10 @@
       {
         "command": "namespace-tests.showFailure",
         "title": "Namespace Tests: Show Failure"
+      },
+      {
+        "command": "namespace-tests.showServed",
+        "title": "Namespace Tests: Show What Vitest Runs"
       }
     ],
     "menus": {
@@ -81,6 +85,10 @@
         {
           "command": "namespace-tests.showCollector",
           "when": "editorLangId == typescript"
+        },
+        {
+          "command": "namespace-tests.showServed",
+          "when": "resourceFilename =~ /\\.temp\\.ts$/"
         }
       ]
     },
