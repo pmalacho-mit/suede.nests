@@ -16,6 +16,7 @@ import { SUFFIX, collected, collectorLines, idFor } from "./collector.mts";
 import { fork } from "./fork.mts";
 import {
   allNeeds,
+  namesIn,
   emitTests,
   headerLines,
   namespaces,
@@ -97,6 +98,41 @@ export const testNameKey = (name: string) =>
     .split(/\s*[\u203a>]\s*/)
     .map((segment) => segment.trim())
     .join(">");
+
+/**
+ * A kept import, with the bindings nothing reaches taken out — and dropped
+ * altogether when nothing it brings in is used. A namespace import is all or
+ * nothing: there is no part of it to remove.
+ */
+function trimmedImport(
+  statement: ts.ImportDeclaration,
+  used: Set<string>,
+): string {
+  const clause = statement.importClause;
+  const bindings = clause?.namedBindings;
+  // `import "./x.ts"` is kept for its effect, not for a name
+  if (!clause) return statement.getFullText();
+  if (bindings && ts.isNamespaceImport(bindings))
+    return used.has(bindings.name.text) ? statement.getFullText() : "";
+
+  const named =
+    bindings && ts.isNamedImports(bindings) ? bindings.elements : [];
+  const wanted = named.filter((e) => used.has(e.name.text));
+  const byDefault = clause.name && used.has(clause.name.text) ? clause.name : null;
+  if (!byDefault && !wanted.length) return "";
+  if (wanted.length === named.length && (!clause.name || byDefault))
+    return statement.getFullText();
+
+  const parts = [
+    byDefault?.text,
+    wanted.length ? `{ ${wanted.map((e) => e.getText()).join(", ")} }` : null,
+  ].filter(Boolean);
+  // whatever sat above the import — a comment, a blank line — is its own
+  const trivia = statement
+    .getFullText()
+    .slice(0, statement.getStart() - statement.getFullStart());
+  return `${trivia}import ${parts.join(", ")} from ${statement.moduleSpecifier.getText()};`;
+}
 
 /**
  * The `export type <alias>` a test came from, found by the namespace it was
@@ -385,6 +421,21 @@ export function minimalFor(
 
   // `getFullText` carries each statement's own leading comments and spacing, so
   // what is kept reads exactly as it did in the module
+  // What the reproduction actually mentions: the names its tests reach, and the
+  // names in the statements it kept. Reachability works in whole statements, so
+  // an import is kept for one of its bindings and brings the rest with it —
+  // which a reader would have to wonder about, and `noUnusedLocals` would
+  // complain about.
+  const used = new Set<string>(tests.flatMap((t) => namesIn(t)));
+  for (const statement of sf.statements) {
+    if (!kept.has(statement) || ts.isImportDeclaration(statement)) continue;
+    const walk = (node: ts.Node): void => {
+      if (ts.isIdentifier(node)) used.add(node.text);
+      ts.forEachChild(node, walk);
+    };
+    walk(statement);
+  }
+
   let src = sf.statements
     .filter(
       (statement) =>
@@ -394,7 +445,11 @@ export function minimalFor(
           statement.importClause?.isTypeOnly
         ),
     )
-    .map((statement) => statement.getFullText())
+    .map((statement) =>
+      ts.isImportDeclaration(statement)
+        ? trimmedImport(statement, used)
+        : statement.getFullText(),
+    )
     .join("");
   // strip `export` from declarations (not from `export {…}` lists / `export type`)
   src = src.replace(
@@ -439,6 +494,31 @@ declare namespace minimalFor {
   type Reset = Invoke<
     typeof minimalForFixture,
     [fixture: "counter.ts", test: "Counter > Reset"]
+  >;
+
+  type Formats = Invoke<
+    typeof minimalFor,
+    [file: "examples/cart.ts", test: "Tests > cart > Formats"]
+  >;
+
+  /** an import brings in only what the test reaches */
+  export type TrimsImports = Expect<
+    Formats,
+    "includes",
+    'import { formatCents } from "./lib/money.ts";'
+  >;
+
+  /** the binding beside it, which this test never mentions, is left behind */
+  export type DropsUnused = Expect<Formats, "excludes", "conversionCount">;
+
+  /** and a test that does reach it keeps it */
+  export type KeepsUsed = Expect<
+    Invoke<
+      typeof minimalFor,
+      [file: "examples/cart.ts", test: "Tests > cart > IsolatedFirst"]
+    >,
+    "includes",
+    'import { conversionCount, formatCents } from "./lib/money.ts";'
   >;
 
   /** the reproduction keeps the class the test exercises */

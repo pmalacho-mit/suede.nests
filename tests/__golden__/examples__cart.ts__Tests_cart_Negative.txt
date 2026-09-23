@@ -1,6 +1,6 @@
 import { test, expect } from "vitest";
 
-import { conversionCount, formatCents } from "./lib/money.ts";
+import { formatCents } from "./lib/money.ts";
 
 test("Tests > cart > Negative", () => {
   const actual = formatCents(-5);

@@ -30,6 +30,7 @@ export {
   headerLines,
   needsOf,
   printExpr,
+  namesIn,
   printBody,
   printStatement,
   printTest,
