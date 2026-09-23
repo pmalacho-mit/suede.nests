@@ -13,6 +13,7 @@ import * as vscode from "vscode";
 
 import { discover, hasTests, nameKey, testFilter } from "./discovery.js";
 import { findLibrary, forgetLibrary, type Library } from "./library.js";
+import { wrapper } from "./display.js";
 import { SUFFIX, extract, extracted, tempPathFor } from "./extract.js";
 import { explain } from "./failure.js";
 
@@ -54,6 +55,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
   /** What each test is doing, keyed by test id. Drives the lenses. */
   const outcomes = new Map<string, Outcome>();
+  /** What the last run saw for a test with a display page, keyed by test id. */
+  const displays = new Map<string, Recorded>();
+  /** Display panels on screen, so a re-run redraws what is already open. */
+  const panels = new Map<string, vscode.WebviewPanel>();
   const lensesChanged = new vscode.EventEmitter<void>();
   context.subscriptions.push(lensesChanged);
 
@@ -157,12 +162,17 @@ export function activate(context: vscode.ExtensionContext): void {
             );
           continue;
         }
+        // a table's rows are several assertions; the first with a page wins
+        const shown = assertions
+          .map((a) => details.get(a.title)?.display)
+          .find(Boolean);
+        if (shown) displays.set(item.id, shown);
         const failed = assertions.filter((a) => a.status === "failed");
         if (failed.length) {
           const message = failed
             .map((a) => {
               const detail = details.get(a.title);
-              if (detail) return explain({ name: a.title, ...detail });
+              if (detail?.message) return explain({ name: a.title, ...detail });
               // no library to ask: Vitest's own message, then its frames
               const [first = "failed", ...rest] = (
                 a.failureMessages?.[0] ?? "failed"
@@ -189,6 +199,7 @@ export function activate(context: vscode.ExtensionContext): void {
     } finally {
       run.end();
       lensesChanged.fire();
+      for (const id of panels.keys()) void send(id);
     }
   };
 
@@ -248,6 +259,15 @@ export function activate(context: vscode.ExtensionContext): void {
                 command: `${ID}.extract`,
                 arguments: [id],
               }),
+              ...(test.display
+                ? [
+                    new vscode.CodeLens(range, {
+                      title: "$(graph) Display",
+                      command: `${ID}.display`,
+                      arguments: [id],
+                    }),
+                  ]
+                : []),
             ];
             if (outcome?.state === "failed")
               lenses.push(
@@ -263,6 +283,26 @@ export function activate(context: vscode.ExtensionContext): void {
       },
     ),
   );
+
+  /**
+   * Hand a page what the run saw, still encoded: what crosses into a webview is
+   * JSON, which cannot carry a `Map` or a `bigint` — so the page's frame
+   * decodes it with the same codec the reporter encoded it with.
+   */
+  const send = async (id: string) => {
+    const panel = panels.get(id);
+    const recorded = displays.get(id);
+    if (!panel || !recorded) return;
+    await panel.webview.postMessage({
+      type: "namespace-tests:result",
+      actual: recorded.actual,
+      expected: recorded.expected,
+      passed: recorded.passed,
+      condition: recorded.condition,
+      message: recorded.message,
+      meta: recorded.meta ?? null,
+    });
+  };
 
   // ── commands ────────────────────────────────────────────────────────────
   const itemById = (id: string) => {
@@ -330,6 +370,67 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       fs.writeFileSync(target, extract(relative, item.label, body));
       await open(target);
+    }),
+
+    /**
+     * A test's own page, showing what the run saw. The page is the author's —
+     * it is handed the values and draws them however it likes — so this only
+     * runs the test if nothing has been recorded yet, and opens it.
+     */
+    vscode.commands.registerCommand(`${ID}.display`, async (from?: vscode.TestItem | string) => {
+      const item = typeof from === "string" ? itemById(from) : from;
+      if (!item?.uri) return;
+      if (!displays.has(item.id)) await runTests(item.uri, item);
+      const recorded = displays.get(item.id);
+      if (!recorded) {
+        void vscode.window.showWarningMessage(
+          `${item.label} recorded nothing to display. Does its page exist, and did the test run?`,
+        );
+        return;
+      }
+      const page = vscode.Uri.joinPath(
+        vscode.Uri.file(path.dirname(item.uri.fsPath)),
+        recorded.display,
+      );
+      if (!fs.existsSync(page.fsPath)) {
+        void vscode.window.showErrorMessage(
+          `${item.label} names a display page that is not there: ${recorded.display}`,
+        );
+        return;
+      }
+      const existing = panels.get(item.id);
+      const panel =
+        existing ??
+        vscode.window.createWebviewPanel(
+          `${ID}.display`,
+          item.label,
+          { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
+          {
+            enableScripts: true,
+            retainContextWhenHidden: true,
+            // the page's own folder, so its stylesheets and images resolve —
+            // and this extension's, for the codec the page decodes with
+            localResourceRoots: [
+              vscode.Uri.file(path.dirname(page.fsPath)),
+              vscode.Uri.joinPath(context.extensionUri, "dist"),
+            ],
+          },
+        );
+      if (!existing) {
+        panels.set(item.id, panel);
+        panel.onDidDispose(() => panels.delete(item.id));
+        // the page announces itself when it is ready for the values
+        panel.webview.onDidReceiveMessage(() => void send(item.id));
+      }
+      panel.webview.html = wrapper(
+        panel.webview.asWebviewUri(page).toString(),
+        panel.webview.cspSource,
+        panel.webview
+          .asWebviewUri(vscode.Uri.joinPath(context.extensionUri, "dist", "codec.js"))
+          .toString(),
+      );
+      panel.reveal(panel.viewColumn, true);
+      await send(item.id);
     }),
 
     /**
@@ -610,6 +711,19 @@ type Detail = {
   diff: string | null;
   where: string | null;
   stack: string | null;
+  /** What a test with a display page recorded, as the reporter encoded it. */
+  display: Recorded | null;
+};
+
+/** One `ntCheck` payload, straight out of results.json. */
+type Recorded = {
+  display: string;
+  meta: unknown;
+  condition: string;
+  passed: boolean;
+  actual: unknown;
+  expected: unknown;
+  message: string | null;
 };
 
 /** Run a file's tests, or one of them, and hand back what Vitest reported. */
@@ -673,12 +787,16 @@ function detailsFrom(file: string): Map<string, Detail> {
   }
   for (const record of records) {
     const error = record.errors?.[0];
-    if (!error) continue;
+    const shown = record.displays?.[0];
+    if (!error && !shown) continue;
     details.set(record.name, {
-      message: error.message,
-      diff: error.diff ?? null,
+      message: error?.message ?? "",
+      diff: error?.diff ?? null,
       where: record.location ? `${record.file}:${record.location.line}` : null,
-      stack: error.stack ?? null,
+      stack: error?.stack ?? null,
+      // still encoded here: decoding needs the library, which is loaded only
+      // when a page is actually opened
+      display: shown ?? null,
     });
   }
   return details;
@@ -690,6 +808,7 @@ type ResultRecord = {
   file: string;
   location: { line: number } | null;
   errors?: { message: string; diff: string | null; stack: string | null }[];
+  displays?: Recorded[];
 };
 
 /** The library's own minimal reproduction, from wherever it is installed. */

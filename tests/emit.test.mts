@@ -158,7 +158,7 @@ describe("assertions", () => {
       display: { page: "./page.html", meta: null },
     });
     expect(printStatement(statement!)).toEqual([
-      `await ntCheck(task, { display: "./page.html", meta: undefined, soft: false }, async () => add(4, 5), 9, (actual) => expect(actual).toEqual(9));`,
+      `await ntCheck(task, { display: "./page.html", meta: undefined, soft: false, condition: ".toEqual(9)" }, async () => add(4, 5), 9, (actual) => expect(actual).toEqual(9));`,
     ]);
     expect(lowerBody(cx, type("Full"), false)[0]).toMatchObject({
       display: { page: "./page.html", meta: { kind: "object" } },

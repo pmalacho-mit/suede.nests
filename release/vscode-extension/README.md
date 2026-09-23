@@ -24,6 +24,15 @@ line you wrote it on. Running one runs exactly that one.
   your own code. The frames from Vitest, chai and Node are dropped, as are the
   ones pointing into the generated test, since that module is served from
   memory and its path opens nothing.
+- **Display** — on a test that names an HTML page
+  (`Expect<…, "./chart.html">`): opens the page and hands it what the run saw,
+  so a failing histogram is a chart rather than a wall of numbers. The page is
+  yours — it announces itself with a `namespace-tests:ready` message and is sent
+  `namespace-tests:result` with `actual`, `expected`, `passed`, `condition`,
+  `message` and `meta`. Only JSON crosses into a webview, so the values travel
+  encoded and are decoded in the page's own frame by the same codec that wrote
+  them — a `Uint8Array`, a `Map` or a `bigint` arrives as itself. Re-running
+  redraws whatever is open.
 - **Diagnostics** — what the printer could not turn into a value, reported where
   you wrote it, before anything runs.
 

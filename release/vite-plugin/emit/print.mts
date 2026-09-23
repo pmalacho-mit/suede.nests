@@ -589,7 +589,7 @@ export function printAssertion(
     // ntCheck runs the same matcher, and records what it saw on task.meta for the IDE
     return [
       ...pre,
-      `await ntCheck(task, { display: ${quote(display.page)}, meta: ${display.meta ? printExpr(display.meta) : "undefined"}, soft: ${soft} }, async () => ${actual}, ${expected}, (actual) => ${expectFn}(actual)${text});`,
+      `await ntCheck(task, { display: ${quote(display.page)}, meta: ${display.meta ? printExpr(display.meta) : "undefined"}, soft: ${soft}, condition: ${quote(text)} }, async () => ${actual}, ${expected}, (actual) => ${expectFn}(actual)${text});`,
     ];
   const statement = `${expectFn}(${subject})${text};`;
   return [...pre, c.rejects ? `await ${statement}` : statement];

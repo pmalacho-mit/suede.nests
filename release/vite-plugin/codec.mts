@@ -1,7 +1,11 @@
-/// <reference types="node" />
 
 // JSON encoding for values that JSON cannot carry. Decoded by the extension
 // (and by display pages, which receive real typed arrays / bigints again).
+//
+// It runs in Node and in a browser: a display page is handed the encoded form
+// and decodes it there, because what reaches a webview is JSON and nothing
+// else. So base64 is done with the platform's own primitives rather than
+// `Buffer`, which only one of those two has.
 
 
 import type { Expect, Invoke, Table } from "../dsl.import.meta.vitest.ts";
@@ -27,6 +31,31 @@ export type TypedArrayName = (typeof TYPED)[number];
 
 const isTypedName = (tag: string): tag is TypedArrayName =>
   (TYPED as readonly string[]).includes(tag);
+
+/** Bytes to base64, wherever this is running. */
+const toBase64 = (bytes: Uint8Array): string => {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return typeof btoa === "function"
+    ? btoa(binary)
+    : // eslint-disable-next-line no-undef
+      (globalThis as { Buffer?: { from(s: string, e: string): { toString(e: string): string } } })
+        .Buffer!.from(binary, "binary")
+        .toString("base64");
+};
+
+/** And back again. */
+const fromBase64 = (base64: string): Uint8Array => {
+  const binary =
+    typeof atob === "function"
+      ? atob(base64)
+      : (globalThis as { Buffer?: { from(s: string, e: string): { toString(e: string): string } } })
+          .Buffer!.from(base64, "base64")
+          .toString("binary");
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+};
 
 /** Encode any value into JSON-safe data. Cycles become `{ $ref: path }`. */
 export function encode(value: unknown, seen: Map<object, string> = new Map(), path = "$"): Encoded {
@@ -58,11 +87,9 @@ export function encode(value: unknown, seen: Map<object, string> = new Map(), pa
     const view = value as ArrayBufferView;
     return {
       $type: tag,
-      base64: Buffer.from(
-        view.buffer,
-        view.byteOffset,
-        view.byteLength,
-      ).toString("base64"),
+      base64: toBase64(
+        new Uint8Array(view.buffer, view.byteOffset, view.byteLength),
+      ),
     };
   }
 
@@ -175,11 +202,9 @@ export function decode(value: Encoded): unknown {
       return new Set((value.values as Encoded[]).map(decode));
   }
   if (typeof type === "string" && isTypedName(type)) {
-    const bytes = Buffer.from(String(value.base64), "base64");
+    const bytes = fromBase64(String(value.base64));
     const Ctor = globalThis[type];
-    return new Ctor(
-      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
-    );
+    return new Ctor(bytes.buffer);
   }
   const out: { [key: string]: unknown } = {};
   for (const [key, val] of Object.entries(value))

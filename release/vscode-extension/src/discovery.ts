@@ -86,6 +86,40 @@ declare namespace renamed {
   ];
 }
 
+/** A string literal, whatever quotes it was written with. */
+const literal = (node: ts.TypeNode | undefined) =>
+  node && ts.isLiteralTypeNode(node) && ts.isStringLiteral(node.literal)
+    ? node.literal.text
+    : null;
+
+/**
+ * The display page a test declares, from the last argument of its `Expect`:
+ * either the page itself, or a `Config` that names it. Nested modifiers are
+ * looked through, so `Skip<Expect<…, "./page.html">>` still has one.
+ */
+const displayIn = (type: ts.TypeNode | undefined): string | null => {
+  if (!type) return null;
+  if (ts.isTupleTypeNode(type))
+    return type.elements.map(displayIn).find(Boolean) ?? null;
+  if (!ts.isTypeReferenceNode(type)) return null;
+  for (const arg of type.typeArguments ?? []) {
+    const page = literal(arg);
+    if (page?.endsWith(".html")) return page;
+    if (ts.isTypeLiteralNode(arg))
+      for (const member of arg.members)
+        if (
+          ts.isPropertySignature(member) &&
+          member.name.getText() === "display"
+        ) {
+          const page = literal(member.type);
+          if (page) return page;
+        }
+    const nested = displayIn(arg);
+    if (nested) return nested;
+  }
+  return null;
+};
+
 /** The name a type reference starts with: `Expect`, or the `dsl` of `dsl.Expect`. */
 const head = (name: ts.EntityName): string =>
   ts.isIdentifier(name) ? name.text : head(name.left);
@@ -133,6 +167,12 @@ export type DiscoveredTest = {
   length: number;
   /** The whole `export type … = …;` as it was written. */
   source: string;
+  /**
+   * The page this test renders its result on, relative to the file — written as
+   * `Expect<…, "./page.html">` or as `{ display: "./page.html" }`. Read from the
+   * source, so the editor can offer it before anything has run.
+   */
+  display: string | null;
 };
 
 const discovered = (
@@ -148,6 +188,7 @@ const discovered = (
     line,
     name: [...path, statement.name.text].join(" > "),
     alias: statement.name.text,
+    display: displayIn(statement.type),
     column: character,
     length: statement.name.text.length,
     source: statement.getText(source).trim(),
@@ -329,5 +370,29 @@ declare namespace renamed {
     Invoke<typeof discover, ["probe.ts", Suite, "Tests"]>,
     "matches",
     [{ name: "Tests > elsewhere > Deep" }]
+  >;
+}
+
+declare namespace displayIn {
+  type Suite = `
+import type { Expect, Invoke, Skip } from "./dsl.import.meta.vitest.ts";
+declare namespace histogram {
+  export type Visual = Expect<1, "=", 1, "./chart.html">;
+  export type Configured = Expect<1, "=", 1, { display: "./page.html"; timeout: 10 }>;
+  export type Skipped = Skip<Expect<1, "=", 1, "./skipped.html">>;
+  export type Plain = Expect<1, "=", 1>;
+}
+`;
+
+  /** written as the page, as a config that names one, or under a modifier */
+  export type Pages = Expect<
+    Invoke<typeof discover, ["probe.ts", Suite]>,
+    "matches",
+    [
+      { alias: "Visual"; display: "./chart.html" },
+      { alias: "Configured"; display: "./page.html" },
+      { alias: "Skipped"; display: "./skipped.html" },
+      { alias: "Plain"; display: null }
+    ]
   >;
 }

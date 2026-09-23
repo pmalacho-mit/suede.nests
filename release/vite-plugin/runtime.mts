@@ -27,11 +27,14 @@ export type TaskLike = { meta: object, result?: { errors?: unknown[] | undefined
 
 /**
  * @param task The test's `task` (from `test(name, async ({ task }) => …)`).
+ * @param condition The matcher chain as the printer wrote it, e.g. `.toEqual([1])`.
+ *   It is passed in rather than read back off the function, which after a
+ *   bundler has rewritten `expect` says nothing a reader would recognise.
  * @param matcher Runs the `expect` chain; throws on failure.
  */
 export async function ntCheck<T>(
   task: TaskLike,
-  { display, meta, soft }: { display: string, meta?: unknown, soft: boolean },
+  { display, meta, soft, condition }: { display: string, meta?: unknown, soft: boolean, condition: string },
   actualThunk: () => T | Promise<T>,
   expected: unknown,
   matcher: (actual: Awaited<T>) => unknown,
@@ -40,7 +43,7 @@ export async function ntCheck<T>(
   const record: DisplayRecord = {
     display,
     meta: meta ?? null,
-    condition: matcher.toString().replace(/^\(actual\) => expect(\.soft)?\(actual\)/, ""),
+    condition,
     passed: true,
     actual,
     expected,
