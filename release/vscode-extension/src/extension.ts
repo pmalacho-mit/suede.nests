@@ -14,7 +14,7 @@ import * as vscode from "vscode";
 import { discover, hasTests, nameKey, testFilter } from "./discovery.js";
 import { parseWithTypeScriptOf } from "./typescript.js";
 import { findLibrary, forgetLibrary, type Library } from "./library.js";
-import { wrapper } from "./display.js";
+import { render } from "./display.js";
 import { SUFFIX, extract, extracted, tempPathFor } from "./extract.js";
 import { explain } from "./failure.js";
 
@@ -60,6 +60,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const displays = new Map<string, Recorded>();
   /** Display panels on screen, so a re-run redraws what is already open. */
   const panels = new Map<string, vscode.WebviewPanel>();
+  /** The page each open panel shows. */
+  const pages = new Map<string, vscode.Uri>();
   const lensesChanged = new vscode.EventEmitter<void>();
   context.subscriptions.push(lensesChanged);
 
@@ -223,7 +225,7 @@ export function activate(context: vscode.ExtensionContext): void {
     } finally {
       run.end();
       lensesChanged.fire();
-      for (const id of panels.keys()) void send(id);
+      for (const id of panels.keys()) show(id);
     }
   };
 
@@ -309,8 +311,28 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   /**
+   * Draw a test's page in its panel, afresh: read from disk, so an edit to the
+   * page shows too, and a page that appends rather than redraws starts clean.
+   * It announces itself once it has loaded, and is then sent its values.
+   */
+  const show = (id: string) => {
+    const panel = panels.get(id);
+    const page = pages.get(id);
+    if (!panel || !page) return;
+    panel.webview.html = render(fs.readFileSync(page.fsPath, "utf8"), {
+      base: panel.webview
+        .asWebviewUri(vscode.Uri.file(path.dirname(page.fsPath)))
+        .toString(),
+      csp: panel.webview.cspSource,
+      codec: panel.webview
+        .asWebviewUri(vscode.Uri.joinPath(context.extensionUri, "dist", "codec.js"))
+        .toString(),
+    });
+  };
+
+  /**
    * Hand a page what the run saw, still encoded: what crosses into a webview is
-   * JSON, which cannot carry a `Map` or a `bigint` — so the page's frame
+   * JSON, which cannot carry a `Map` or a `bigint` — so the page's bootstrap
    * decodes it with the same codec the reporter encoded it with.
    */
   const send = async (id: string) => {
@@ -318,7 +340,8 @@ export function activate(context: vscode.ExtensionContext): void {
     const recorded = displays.get(id);
     if (!panel || !recorded) return;
     await panel.webview.postMessage({
-      type: "namespace-tests:result",
+      // decoded, and renamed `namespace-tests:result`, by the page's bootstrap
+      type: "namespace-tests:encoded",
       actual: recorded.actual,
       expected: recorded.expected,
       passed: recorded.passed,
@@ -422,6 +445,7 @@ export function activate(context: vscode.ExtensionContext): void {
         );
         return;
       }
+      pages.set(item.id, page);
       const existing = panels.get(item.id);
       const panel =
         existing ??
@@ -442,19 +466,15 @@ export function activate(context: vscode.ExtensionContext): void {
         );
       if (!existing) {
         panels.set(item.id, panel);
-        panel.onDidDispose(() => panels.delete(item.id));
+        panel.onDidDispose(() => {
+          panels.delete(item.id);
+          pages.delete(item.id);
+        });
         // the page announces itself when it is ready for the values
         panel.webview.onDidReceiveMessage(() => void send(item.id));
       }
-      panel.webview.html = wrapper(
-        panel.webview.asWebviewUri(page).toString(),
-        panel.webview.cspSource,
-        panel.webview
-          .asWebviewUri(vscode.Uri.joinPath(context.extensionUri, "dist", "codec.js"))
-          .toString(),
-      );
+      show(item.id);
       panel.reveal(panel.viewColumn, true);
-      await send(item.id);
     }),
 
     /**

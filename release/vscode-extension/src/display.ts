@@ -1,11 +1,17 @@
 // Rendering a test's own display page.
 //
 // A test can name an HTML page to show its result on — a chart instead of a
-// wall of numbers. The page is the author's, so it is loaded in an iframe and
-// spoken to the way the page expects: it announces itself with
-// `namespace-tests:ready`, and is handed `namespace-tests:result`. This module
-// only builds the wrapper around it; the values come from the run.
-import type { Expect, Invoke, Table } from "../../dsl.import.meta.vitest.ts";
+// wall of numbers. The page is the author's, and it *is* the webview: its HTML
+// is read from disk and served as the webview's own document, with a few lines
+// put in front of it. It is not nested in a frame of its own. A nested frame
+// navigates to its page, and in an editor running in a browser those
+// navigations never reach the files — only the webview's own fetches do, which
+// is how everything else here arrives.
+//
+// The page's side of the contract: listen for `message` before it has finished
+// loading, and it is handed `namespace-tests:result` once it has. Announcing
+// itself with `namespace-tests:ready` is still understood, but not needed.
+import type { Expect, Invoke } from "../../dsl.import.meta.vitest.ts";
 
 /** What a display page is handed, once the run has something to show. */
 export type DisplayResult = {
@@ -29,99 +35,126 @@ const escape = (text: string) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
-/** A nonce, so the wrapper's one script can run under a strict policy. */
+/** A nonce, so the page's scripts — and nothing else — can run under a strict policy. */
 export const nonce = (random = Math.random) =>
   random().toString(36).slice(2).padEnd(8, "0").slice(0, 8);
 
+/** Where what the page needs comes from, as the webview can reach it. */
+export type Sources = {
+  /** The page's own folder, so its stylesheets, scripts and images resolve. */
+  base: string;
+  /** The webview's resource origin, for the content security policy. */
+  csp: string;
+  /** The codec the values are decoded with. */
+  codec: string;
+};
+
 /**
- * The page in an iframe, plus the few lines that relay between it and the
- * extension: the page says it is ready, the extension sends the result, the
- * wrapper decodes it and passes it on. Nothing of the result is written into
- * this HTML — it arrives by message, and is decoded here rather than before
- * being sent, because only JSON crosses into a webview and the whole point of
- * the encoding is to carry what JSON cannot.
+ * Tell the extension the page is ready — once, whichever comes first: the page
+ * saying so, or its having loaded. Then decode what arrives and hand it on.
+ *
+ * The values travel encoded because only JSON crosses into a webview, which
+ * cannot carry a `Map` or a `bigint`. They arrive as `namespace-tests:encoded`
+ * and leave as `namespace-tests:result`, so this never hears its own message.
  */
-export function wrapper(
-  page: string,
-  csp: string,
-  codec: string,
-  id = nonce(),
-): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src ${csp}; style-src 'unsafe-inline'; script-src 'nonce-${id}' ${csp};" />
-  <style>
-    html, body { height: 100%; margin: 0; }
-    iframe { border: 0; width: 100%; height: 100%; display: block; }
-  </style>
-</head>
-<body>
-  <iframe id="page" src="${escape(page)}"></iframe>
-  <script type="module" nonce="${id}">
-    import { decode } from "${escape(codec)}";
-    const vscode = acquireVsCodeApi();
-    const page = document.getElementById("page");
-    let result = null;
-    let ready = false;
-    const send = () => {
-      if (ready && result) page.contentWindow.postMessage(result, "*");
-    };
-    // the page announces itself; the extension answers with what the run saw
-    window.addEventListener("message", ({ data }) => {
-      if (data?.type === "namespace-tests:ready") {
-        ready = true;
-        vscode.postMessage({ type: "ready" });
-      } else if (data?.type === "namespace-tests:result") {
-        // what crossed from the extension is JSON; the page gets the values back
-        result = { ...data, actual: decode(data.actual), expected: decode(data.expected) };
-        send();
-      }
-      send();
-    });
-    // a page that listens without announcing still gets its result
-    page.addEventListener("load", () => {
-      ready = true;
-      vscode.postMessage({ type: "ready" });
-    });
-  </script>
-</body>
-</html>`;
+const bootstrap = (codec: string) => `(() => {
+  const vscode = acquireVsCodeApi();
+  const codec = import(${JSON.stringify(codec).replace(/</g, "\\u003c")});
+  let announced = false;
+  const announce = () => {
+    if (announced) return;
+    announced = true;
+    vscode.postMessage({ type: "ready" });
+  };
+  window.addEventListener("message", async ({ data }) => {
+    if (data?.type === "namespace-tests:ready") announce();
+    else if (data?.type === "namespace-tests:encoded") {
+      const { decode } = await codec;
+      window.postMessage(
+        { ...data, type: "namespace-tests:result", actual: decode(data.actual), expected: decode(data.expected) },
+        "*",
+      );
+    }
+  });
+  window.addEventListener("load", announce);
+})();`;
+
+/**
+ * The page, as the webview's document: a policy, a base for its relative URLs
+ * and the bootstrap go first, and every script the page already has is given
+ * the nonce — the page is trusted, but nothing slipped into it is.
+ */
+export function render(page: string, sources: Sources, id = nonce()): string {
+  const policy = [
+    "default-src 'none'",
+    `img-src ${sources.csp} data: https:`,
+    `font-src ${sources.csp}`,
+    `style-src 'unsafe-inline' ${sources.csp}`,
+    `script-src 'nonce-${id}' ${sources.csp}`,
+    `connect-src ${sources.csp}`,
+  ].join("; ");
+  const head = [
+    `<meta http-equiv="Content-Security-Policy" content="${policy}" />`,
+    `<base href="${escape(sources.base.endsWith("/") ? sources.base : `${sources.base}/`)}" />`,
+    `<script nonce="${id}">${bootstrap(sources.codec)}</script>`,
+  ].join("\n");
+  const trusted = page.replace(
+    /<script\b(?![^>]*\bnonce=)/gi,
+    `<script nonce="${id}"`,
+  );
+  // before anything else — a policy only binds what comes after it — but after
+  // the doctype, which has to be first to keep the page out of quirks mode
+  const doctype = /^\s*<!doctype[^>]*>/i.exec(trusted)?.[0] ?? "";
+  return `${doctype}\n${head}\n${trusted.slice(doctype.length)}`;
 }
 
-declare namespace wrapper {
+declare namespace render {
+  type Page = `<!doctype html>
+<div id="chart"></div>
+<script>window.addEventListener("message", () => {});</script>`;
   type Html = Invoke<
-    typeof wrapper,
-    ["https://x/page.html", "https://x", "https://x/codec.js", "abc123"]
+    typeof render,
+    [
+      Page,
+      { base: "https://r/pages"; csp: "https://r"; codec: "https://r/codec.js" },
+      "abc123",
+    ]
   >;
 
-  /** the page is what is shown; the wrapper is only around it */
-  export type Frames = Expect<
+  /** the page is the document — there is no frame for a browser to refuse */
+  export type NotFramed = Expect<Html, "excludes", "<iframe">;
+
+  /** the doctype stays first, so the page is not rendered in quirks mode */
+  export type Doctype = Expect<Html, "startsWith", "<!doctype html>">;
+
+  /** its relative URLs resolve against its own folder */
+  export type Based = Expect<Html, "includes", '<base href="https://r/pages/" />'>;
+
+  /** its own scripts run, by the nonce they are given */
+  export type Trusted = Expect<
     Html,
     "includes",
-    '<iframe id="page" src="https://x/page.html">'
+    '<script nonce="abc123">window.addEventListener'
   >;
 
-  /** its own script runs by nonce, and nothing else may */
-  export type Locked = Table<
-    typeof wrapper,
-    [
+  /** and only those: nothing without the nonce may */
+  export type Locked = Expect<
+    Html,
+    "includes",
+    "script-src 'nonce-abc123' https://r;"
+  >;
+
+  /** a base that would break out of its attribute cannot */
+  export type Escaped = Expect<
+    Invoke<
+      typeof render,
       [
-        args: ["p.html", "https://x", "c.js", "abc123"],
-        cond: "includes",
-        expected: "script-src 'nonce-abc123' https://x;",
-      ],
-      [
-        args: ["p.html", "https://x", "c.js", "abc123"],
-        cond: "includes",
-        expected: "frame-src https://x;",
-      ],
-      [
-        args: ['"><script>alert(1)</script>', "https://x", "c.js", "abc123"],
-        cond: "excludes",
-        expected: "<script>alert(1)",
+        "<p></p>",
+        { base: '"><script>alert(1)</script>'; csp: "x"; codec: "x" },
+        "abc123",
       ]
-    ]
+    >,
+    "excludes",
+    "<script>alert(1)"
   >;
 }

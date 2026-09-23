@@ -30,14 +30,17 @@ line you wrote it on. Running one runs exactly that one.
   ones pointing into the generated test, since that module is served from
   memory and its path opens nothing.
 - **Display** — on a test that names an HTML page
-  (`Expect<…, "./chart.html">`): opens the page and hands it what the run saw,
-  so a failing histogram is a chart rather than a wall of numbers. The page is
-  yours — it announces itself with a `namespace-tests:ready` message and is sent
-  `namespace-tests:result` with `actual`, `expected`, `passed`, `condition`,
+  (`Expect<…, "./chart.html">`): opens the page with what the run saw, so a
+  failing histogram is a chart rather than a wall of numbers. Your page *is* the
+  webview — it is served as the webview's own document, not nested in a frame —
+  so it works the same in desktop VS Code and in an editor running in a browser,
+  and it can use VS Code's `--vscode-*` theme variables. Listen for `message`
+  before the page has finished loading and you are sent
+  `namespace-tests:result`, with `actual`, `expected`, `passed`, `condition`,
   `message` and `meta`. Only JSON crosses into a webview, so the values travel
-  encoded and are decoded in the page's own frame by the same codec that wrote
-  them — a `Uint8Array`, a `Map` or a `bigint` arrives as itself. Re-running
-  redraws whatever is open.
+  encoded and are decoded in the page by the same codec that wrote them — a
+  `Uint8Array`, a `Map` or a `bigint` arrives as itself. Re-running redraws the
+  page from disk, so it starts clean.
 - **Diagnostics** — what the printer could not turn into a value, reported where
   you wrote it, before anything runs.
 
