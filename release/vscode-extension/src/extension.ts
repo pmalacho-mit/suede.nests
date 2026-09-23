@@ -12,6 +12,7 @@ import path from "node:path";
 import * as vscode from "vscode";
 
 import { discover, hasTests, nameKey, testFilter } from "./discovery.js";
+import { parseWithTypeScriptOf } from "./typescript.js";
 import { findLibrary, forgetLibrary, type Library } from "./library.js";
 import { wrapper } from "./display.js";
 import { SUFFIX, extract, extracted, tempPathFor } from "./extract.js";
@@ -65,6 +66,29 @@ export function activate(context: vscode.ExtensionContext): void {
   const idFor = (uri: vscode.Uri, name: string) => `${uri.toString()}::${name}`;
 
   // ── discovery ───────────────────────────────────────────────────────────
+  /** Folders already told they have nothing to parse with, so it is said once. */
+  const unparsable = new Set<string>();
+
+  /**
+   * Point discovery at the TypeScript the library beside this file uses. False
+   * when there is no library, or no TypeScript it can reach — then there is
+   * nothing here this extension could run, and nothing is shown.
+   */
+  const parsable = (uri: vscode.Uri) => {
+    const folder = folderOf(uri);
+    const library = findLibrary(folder);
+    if (library && parseWithTypeScriptOf(library.root)) return true;
+    if (!unparsable.has(folder)) {
+      unparsable.add(folder);
+      output.appendLine(
+        library
+          ? `${folder}: found the library, but no TypeScript beside it to parse with — is it installed?`
+          : `${folder}: no namespace-tests library found, so its tests cannot be discovered.`,
+      );
+    }
+    return false;
+  };
+
   const load = (uri: vscode.Uri, text?: string) => {
     let source: string;
     try {
@@ -72,7 +96,7 @@ export function activate(context: vscode.ExtensionContext): void {
     } catch {
       return [];
     }
-    if (!hasTests(source)) {
+    if (!hasTests(source) || !parsable(uri)) {
       controller.items.delete(uri.toString());
       return [];
     }
@@ -228,7 +252,7 @@ export function activate(context: vscode.ExtensionContext): void {
         onDidChangeCodeLenses: lensesChanged.event,
         provideCodeLenses(document) {
           const text = document.getText();
-          if (!hasTests(text)) return [];
+          if (!hasTests(text) || !parsable(document.uri)) return [];
           const tests = discover(document.uri.fsPath, text);
           const top: vscode.CodeLens[] = tests.length
             ? [

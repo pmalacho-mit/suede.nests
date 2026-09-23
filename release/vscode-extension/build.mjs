@@ -1,5 +1,9 @@
-// Bundle the extension. VS Code loads one file; `typescript` comes along for the
-// parse that discovery does, and `vscode` is provided by the host.
+// Bundle the extension. VS Code loads one file, and provides `vscode` itself.
+//
+// TypeScript is not bundled: discovery parses with the copy the library
+// imports, so what the editor finds is what the plugin runs. `typescript` is
+// aliased to a stand-in that resolves that copy on first use — which also keeps
+// a 10MB compiler out of every TypeScript workspace the extension activates in.
 //
 // The codec is built a second time, for the browser: what reaches a webview is
 // JSON, so a display page is handed the encoded form and decodes it there, with
@@ -25,6 +29,7 @@ await build({
   target: "node20",
   format: "cjs",
   external: ["vscode"],
+  alias: { typescript: "./src/typescript.ts" },
   sourcemap: true,
   minify: process.argv.includes("--minify"),
   logLevel: "info",
