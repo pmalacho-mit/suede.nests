@@ -8,6 +8,9 @@ line you wrote it on. Running one runs exactly that one.
 
 - **Run** — a single test, through Vitest, reported back at its own line. A file
   runs when you open or save it, and the lens shows where each test stands.
+- **What Vitest sees** — at the top of a file with tests: your file diffed
+  against the module Vitest is actually handed, which is your code plus the
+  block that imports one generated test per `export type`.
 - **Extract** — writes the test out as a real file beside the module it came
   from (`counter.Counter_Chainable.temp.ts`) and opens it: the part of your
   module the test needs, then the test.

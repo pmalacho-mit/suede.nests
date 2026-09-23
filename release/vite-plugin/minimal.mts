@@ -12,6 +12,7 @@ import ts from "typescript";
 import path from "node:path";
 import fs from "node:fs";
 import { cacheKey, read, write } from "./cache.mts";
+import { collected, collectorLines, idFor } from "./collector.mts";
 import {
   allNeeds,
   emitTests,
@@ -218,6 +219,61 @@ function reachable(
     visit(node);
   }
   return keep;
+}
+
+/**
+ * The module Vitest is handed for a file: the source, then the block that pulls
+ * in one generated module per test. The plugin appends exactly this during
+ * `transform` — both go through `collectorLines`, so what this prints is what
+ * runs.
+ */
+export function collectorFor(
+  file: string,
+  {
+    root,
+    tsconfig = "tsconfig.json",
+    runtime,
+    input,
+  }: {
+    root?: string | undefined;
+    tsconfig?: string | undefined;
+    runtime?: string | undefined;
+    input?: EmitInput | undefined;
+  } = {},
+): string {
+  const abs = path.resolve(file);
+  const program = input?.program ?? programFor(abs, configFor(tsconfig));
+  const sf = input?.source ?? program.getSourceFile(abs);
+  if (!sf) throw new Error(`cannot load ${file}`);
+  const { tests } = emittedFor({ program, source: sf }, root, runtime);
+  const collector = collectorLines(
+    tests.map((t) => ({ id: idFor(abs, t.name), line: t.line })),
+  );
+  return collected(sf.text, tests.length ? collector : []);
+}
+
+declare namespace collectorFor {
+  type Counter = Invoke<
+    typeof collectorFor,
+    [file: "examples/counter.ts"]
+  >;
+
+  /** your file, unchanged, is the whole of the top */
+  export type KeepsSource = Expect<Counter, "includes", "class Counter">;
+
+  /** and under it, what Vitest collects — guarded, so an importer gets nothing */
+  export type Collects = Expect<
+    Counter,
+    "includes",
+    "if (import.meta.vitest) {"
+  >;
+
+  /** one import per test, named for the test it runs */
+  export type PerTest = Expect<
+    Counter,
+    "includes",
+    "counter.Tests_Counter_Chainable.namespace.test.ts"
+  >;
 }
 
 export function minimalFor(

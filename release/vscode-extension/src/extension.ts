@@ -26,6 +26,11 @@ const DERIVED = ".derived";
 
 /** Where Node keeps the compiled form of what these commands load. */
 let compiledModules: string | undefined;
+
+/** The scheme the right-hand side of the "what Vitest sees" diff is served on. */
+const COLLECTOR = `${ID}-collector`;
+const collectors = new Map<string, string>();
+const onCollectorChange = new vscode.EventEmitter<vscode.Uri>();
 const derivedIn = (folder: string) => {
   const library = findLibrary(folder);
   return library ? path.join(library.root, DERIVED) : null;
@@ -213,7 +218,17 @@ export function activate(context: vscode.ExtensionContext): void {
         provideCodeLenses(document) {
           const text = document.getText();
           if (!hasTests(text)) return [];
-          return discover(document.uri.fsPath, text).flatMap((test) => {
+          const tests = discover(document.uri.fsPath, text);
+          const top: vscode.CodeLens[] = tests.length
+            ? [
+                new vscode.CodeLens(new vscode.Range(0, 0, 0, 0), {
+                  title: `$(diff) What Vitest sees (${tests.length} test${tests.length === 1 ? "" : "s"})`,
+                  command: `${ID}.showCollector`,
+                  arguments: [document.uri],
+                }),
+              ]
+            : [];
+          return top.concat(tests.flatMap((test) => {
             const range = new vscode.Range(
               test.line,
               test.column,
@@ -243,7 +258,7 @@ export function activate(context: vscode.ExtensionContext): void {
                 }),
               );
             return lenses;
-          });
+          }));
         },
       },
     ),
@@ -317,6 +332,35 @@ export function activate(context: vscode.ExtensionContext): void {
       await open(target);
     }),
 
+    /**
+     * What Vitest is handed for this file: your code, plus the block that pulls
+     * in the generated tests. Shown against the file itself, so the addition is
+     * the whole of the difference.
+     */
+    vscode.commands.registerCommand(`${ID}.showCollector`, async (uri: vscode.Uri) => {
+      let text: string;
+      try {
+        text = await collector(uri, output);
+      } catch (error) {
+        output.appendLine(String(error));
+        output.show(true);
+        void vscode.window.showErrorMessage(
+          `Could not read what Vitest sees for ${path.basename(uri.fsPath)}. See the Namespace Tests output.`,
+        );
+        return;
+      }
+      collectors.set(uri.fsPath, text);
+      const right = uri.with({ scheme: COLLECTOR, query: `${Date.now()}` });
+      onCollectorChange.fire(right);
+      await vscode.commands.executeCommand(
+        "vscode.diff",
+        uri,
+        right,
+        `${path.basename(uri.fsPath)} ↔ what Vitest sees`,
+        { preview: true },
+      );
+    }),
+
     /** The extracted file, run the way anyone would run a test file. */
     vscode.commands.registerCommand(`${ID}.runExtracted`, (uri: vscode.Uri) => {
       const cwd = folderOf(uri);
@@ -371,6 +415,15 @@ export function activate(context: vscode.ExtensionContext): void {
       // close it first, or its editor is left behind showing a file that is gone
       await closeEditorsFor(uri);
       await vscode.workspace.fs.delete(uri);
+    }),
+  );
+
+  // ── the right-hand side of that diff ────────────────────────────────────
+  context.subscriptions.push(
+    onCollectorChange,
+    vscode.workspace.registerTextDocumentContentProvider(COLLECTOR, {
+      onDidChange: onCollectorChange.event,
+      provideTextDocumentContent: (uri) => collectors.get(uri.fsPath) ?? "",
     }),
   );
 
@@ -640,9 +693,14 @@ type ResultRecord = {
 };
 
 /** The library's own minimal reproduction, from wherever it is installed. */
-async function minimal(
+/**
+ * Ask the library about a file. `what` is the test to print, or `--collector`
+ * for the module Vitest is handed. Either way the answer usually comes from
+ * what a run already printed, which is why this is worth doing on a click.
+ */
+async function ask(
   uri: vscode.Uri,
-  name: string,
+  what: string,
   output: vscode.OutputChannel,
 ): Promise<string> {
   const cwd = folderOf(uri);
@@ -653,7 +711,10 @@ async function minimal(
 
   const library = findLibrary(cwd);
   const [command, args] = configured
-    ? [configured.split(" ")[0]!, [...configured.split(" ").slice(1), file, name]]
+    ? [
+        configured.split(" ")[0]!,
+        [...configured.split(" ").slice(1), file, what],
+      ]
     : (() => {
         if (!library)
           throw new Error(
@@ -665,13 +726,12 @@ async function minimal(
         const runtime = runtimeSpecifier(library, uri.fsPath);
         return [
           "node",
-          [library.minimal, file, name, ...(runtime ? ["--runtime", runtime] : [])],
+          [library.minimal, file, what, ...(runtime ? ["--runtime", runtime] : [])],
         ] as const;
       })();
 
-  // Node keeps the compiled form of what it loads here, which is most of what
-  // a cold run costs: the library is ~10MB of TypeScript to parse otherwise.
-  // It sits with the library's own cache, which ignores itself.
+  // Node keeps the compiled form of what it loads in this extension's own
+  // storage: most of a cold run is parsing ~10MB of TypeScript.
   const result = await exec(
     command,
     [...args],
@@ -681,10 +741,21 @@ async function minimal(
   if (!result.stdout.trim()) {
     output.appendLine(`${command} ${args.join(" ")}`);
     output.appendLine(result.stderr || "(no output)");
-    throw new Error(`No generated source for ${name}`);
+    throw new Error(`No generated source for ${what}`);
   }
   return result.stdout;
 }
+
+/** One test, as a file that can stand on its own. */
+const minimal = (
+  uri: vscode.Uri,
+  name: string,
+  output: vscode.OutputChannel,
+) => ask(uri, name, output);
+
+/** The whole file, as Vitest is handed it. */
+const collector = (uri: vscode.Uri, output: vscode.OutputChannel) =>
+  ask(uri, "--collector", output);
 
 function exec(
   command: string,

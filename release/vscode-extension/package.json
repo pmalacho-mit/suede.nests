@@ -2,7 +2,7 @@
   "name": "namespace-tests",
   "displayName": "Namespace Tests",
   "description": "Type-level tests in the editor: run them from the line you wrote them on.",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "publisher": "pmalacho-mit",
   "engines": {
     "vscode": "^1.88.0"
@@ -24,6 +24,10 @@
       {
         "command": "namespace-tests.extract",
         "title": "Namespace Tests: Extract Test to a File"
+      },
+      {
+        "command": "namespace-tests.showCollector",
+        "title": "Namespace Tests: Show What Vitest Sees"
       },
       {
         "command": "namespace-tests.runExtracted",
@@ -69,6 +73,10 @@
         {
           "command": "namespace-tests.showFailure",
           "when": "false"
+        },
+        {
+          "command": "namespace-tests.showCollector",
+          "when": "editorLangId == typescript"
         }
       ]
     },

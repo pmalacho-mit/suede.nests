@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 // `nt-minimal <file> <test> [--runtime <specifier>] [--root <namespace>]`
+// `nt-minimal <file> --collector`
 //
-// Prints one test as a standalone file. A test the plugin has already printed —
-// every test in a file the editor just ran — is answered from the cache without
-// loading TypeScript at all, which is the difference between 40ms and a second.
+// Prints one test as a standalone file — or, with `--collector`, the module
+// Vitest is handed for that file: your code, plus the block that pulls in the
+// generated tests. Anything the plugin has already printed is answered from
+// the cache without loading TypeScript at all, which is the difference between
+// 40ms and a second.
 import fs from "node:fs";
 import module from "node:module";
 import path from "node:path";
 
-import { cacheKey, compileCacheDir, ensureDerived, read } from "./cache.mts";
+import { cacheKey, compileCacheDir, ensureDerived, read, write } from "./cache.mts";
 
 // Most of what a cold run costs is Node compiling the library — TypeScript is
 // about 10MB to parse — so the compiled form is kept between runs. A caller
@@ -25,26 +28,41 @@ const flag = (name: string) => {
   return at === -1 ? undefined : args[at + 1];
 };
 const [file, testName] = args.filter(
-  (arg, index) =>
-    !arg.startsWith("--") && !args[index - 1]?.startsWith("--"),
+  (arg, index) => !arg.startsWith("--") && !args[index - 1]?.startsWith("--"),
 );
+const wholeFile = args.includes("--collector");
 
-if (!file || !testName) {
-  console.error("usage: nt-minimal <file.ts> <TestName> [--runtime <spec>] [--root <ns>]");
+if (!file || (!testName && !wholeFile)) {
+  console.error(
+    "usage: nt-minimal <file.ts> <TestName> [--runtime <spec>] [--root <ns>]\n" +
+      "       nt-minimal <file.ts> --collector",
+  );
   process.exit(2);
 }
 
 const root = flag("root");
 const runtime = flag("runtime");
-
-const hit = fs.existsSync(file)
-  ? read(cacheKey(fs.readFileSync(path.resolve(file), "utf8"), testName, root, runtime))
+const source = fs.existsSync(file)
+  ? fs.readFileSync(path.resolve(file), "utf8")
   : null;
+
+// `--collector` is about the file, not one test of it, so it is filed under a
+// name no test can have.
+const key =
+  source === null
+    ? null
+    : cacheKey(source, wholeFile ? "\0collector" : testName!, root, runtime);
+const hit = key === null ? null : read(key);
 
 if (hit !== null) {
   process.stdout.write(hit);
-} else {
+} else if (wholeFile) {
   // only now is a compiler worth its quarter of a second
+  const { collectorFor } = await import("./minimal.mts");
+  const text = collectorFor(file, { root, runtime });
+  if (key) write(key, text);
+  process.stdout.write(text);
+} else {
   const { minimalFor } = await import("./minimal.mts");
-  process.stdout.write(minimalFor(file, testName, { root, runtime }));
+  process.stdout.write(minimalFor(file, testName!, { root, runtime }));
 }
