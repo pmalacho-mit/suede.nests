@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { cli, main } from "./vendored/typescript-cli-suede/index.ts";
 import { SUFFIX, extracted } from "./extract.mts";
+import { isSearchable } from "./workspace.mts";
 import {
   cacheKey,
   caches,
@@ -133,11 +134,6 @@ declare namespace parse {
     { test: "a > B"; runtime: "../vite-plugin/runtime.mts" }
   >;
 }
-
-const SKIPPED_DIRECTORIES = new Set(["node_modules", "dist", "out", "coverage"]);
-
-const isSearchable = (entry: fs.Dirent) =>
-  !entry.name.startsWith(".") && !SKIPPED_DIRECTORIES.has(entry.name);
 
 function* extractsUnder(dir: string): Generator<string> {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

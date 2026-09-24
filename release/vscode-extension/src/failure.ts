@@ -1,47 +1,28 @@
-// What a failing test says, put together from what the run reported: the
-// assertion's own message, the diff of what it expected against what it got,
-// and where to look. Kept away from the editor so it can be tested on its own.
+import { SUFFIX as GENERATED } from "../../vite-plugin/collector.mts";
+
 import type { Expect, Invoke, Table } from "../../dsl.import.meta.vitest.ts";
 
-/** What a run reported about one failure. */
 export type Failure = {
-  /** The test's name, as it was written. */
   name: string;
-  /** The assertion's own message. */
   message: string;
-  /** Expected against received, as the runner printed it. */
   diff?: string | null;
-  /** Where the run said it happened, relative to the workspace. */
   where?: string | null;
-  /** The frames the runner gave, if any. */
   stack?: string | null;
 };
 
-/** The generated test the plugin serves from memory — no such file on disk. */
-const VIRTUAL = ".namespace.test.ts";
+// a generated test is served from memory, so a frame in it opens nothing
+const NOT_YOURS = ["node_modules", "node:internal", "(native)", GENERATED];
 
-/**
- * A stack with the runner's own machinery taken out, and with it the frames
- * pointing into the generated test: that module is served from memory, so its
- * path opens nothing. What is left is your code, which is the part worth
- * reading — and the failure says where it was written anyway.
- */
+const isYours = (frame: string) => !NOT_YOURS.some((part) => frame.includes(part));
+
 export function frames(stack: string | null | undefined): string[] {
   if (!stack) return [];
   return stack
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => line.startsWith("at "))
-    .filter(
-      (line) =>
-        !line.includes("node_modules") &&
-        !line.includes("node:internal") &&
-        !line.includes("(native)") &&
-        !line.includes(VIRTUAL),
-    );
+    .filter((line) => line.startsWith("at ") && isYours(line));
 }
 
-/** One failure, as it reads in the output channel. */
 export function explain(failure: Failure): string {
   const { name, message, diff, where, stack } = failure;
   const parts = [where ? `${name} — ${where}` : name, "", message];

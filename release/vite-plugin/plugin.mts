@@ -9,6 +9,7 @@ import { SUFFIX, collected, collectorLines, idFor } from "./collector.mts";
 import { SUFFIX as EXTRACTED } from "../extract.mts";
 import { FORK, fork, forkOf } from "./fork.mts";
 import { configFor, emittedFor, minimalFor } from "./minimal.mts";
+import { importPath, relativeTo, runtimeSpecifier } from "./runtime-specifier.mts";
 
 import type { Plugin, ViteUserConfig } from "vitest/config";
 import type { SourceMapSegment } from "@jridgewell/sourcemap-codec";
@@ -82,10 +83,6 @@ const matchesCounter = (filter: RegExp | null) =>
 
 const readsAsPattern = (filter: RegExp | null) =>
   !!filter?.test("add > Rows0") && !filter.test("add > Rows[0]");
-
-const posix = (file: string) => file.split(path.sep).join("/");
-
-const relativeTo = (dir: string, file: string) => posix(path.relative(dir, file));
 
 const isTypeScript = (file: string) => /\.[cm]?tsx?$/.test(file);
 
@@ -194,19 +191,10 @@ const library = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 const bundledRuntime = fileURLToPath(new URL("./runtime.mts", import.meta.url));
 
-const isInstalled = (file: string) =>
-  file.includes(`${path.sep}node_modules${path.sep}`);
-
-const importPath = (importer: string, file: string) => {
-  const rel = relativeTo(path.dirname(importer), file);
-  return rel.startsWith(".") ? rel : `./${rel}`;
-};
-
-// an installed runtime is imported by its package name, which is the printer's default
-const runtimeImporter = (runtimeFile?: string) => {
-  const file = runtimeFile ?? (isInstalled(bundledRuntime) ? null : bundledRuntime);
-  return (importer: string) => (file ? importPath(importer, file) : undefined);
-};
+const runtimeImporter = (runtimeFile?: string) => (importer: string) =>
+  runtimeFile
+    ? importPath(importer, runtimeFile)
+    : runtimeSpecifier(bundledRuntime, importer);
 
 const VITEST_DEFAULT_INCLUDE = ["**/*.{test,spec}.?(c|m)[jt]s?(x)"];
 

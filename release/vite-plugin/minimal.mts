@@ -5,6 +5,7 @@ import fs from "node:fs";
 import { cacheKey, read, write } from "./cache.mts";
 import { SUFFIX, collected, collectorLines, idFor } from "./collector.mts";
 import { fork } from "./fork.mts";
+import { answersTo } from "../test-names.mts";
 import {
   allNeeds,
   namesIn,
@@ -16,12 +17,7 @@ import {
 
 import type { Emitted, EmitInput } from "./emit/index.mts";
 
-import type {
-  Expect,
-  Invoke,
-  Table,
-  Throws,
-} from "../dsl.import.meta.vitest.ts";
+import type { Expect, Invoke, Throws } from "../dsl.import.meta.vitest.ts";
 import type { minimalForFixture } from "../_internal/harness.mts";
 
 export type Options = {
@@ -89,18 +85,8 @@ export function emittedFor(
   return emitted;
 }
 
-export const testNameKey = (name: string) =>
-  name
-    .split(/\s*[\u203a>]\s*/)
-    .map((segment) => segment.trim())
-    .join(">");
-
-// by full name, by alias, or by a table's name for all of its rows
-const isNamed = (test: EmittedTest, name: string) => {
-  const wanted = testNameKey(name);
-  const key = testNameKey(test.name);
-  return key === wanted || test.alias === name || key.startsWith(`${wanted}[`);
-};
+const isNamed = (test: EmittedTest, name: string) =>
+  test.alias === name || answersTo(test.name, name);
 
 function testsNamed(tests: EmittedTest[], name: string, file: string) {
   const named = tests.filter((test) => isNamed(test, name));
@@ -378,19 +364,6 @@ export function minimalFor(
   const minimal = printMinimal(file, testName, options);
   write(key, minimal);
   return minimal;
-}
-
-declare namespace testNameKey {
-  /** however the separator is spelled, the same test is the same test */
-  export type Spellings = Table<
-    typeof testNameKey,
-    [
-      [args: ["add > Simple"], expected: "add>Simple"],
-      [args: ["add \u203a Simple"], expected: "add>Simple"],
-      [args: ["a>b>c"], expected: "a>b>c"],
-      [args: ["AtTheRoot"], expected: "AtTheRoot"],
-    ]
-  >;
 }
 
 declare namespace minimalFor {
