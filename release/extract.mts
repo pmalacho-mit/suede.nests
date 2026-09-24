@@ -1,15 +1,13 @@
 import { createHash } from "node:crypto";
-import path from "node:path";
+
+import { perTestFile } from "./vite-plugin/collector.mts";
 
 import type { Call, Expect, Invoke, Table } from "./dsl.import.meta.vitest.ts";
 
 export const SUFFIX = ".temp.ts";
 
-export function tempPathFor(source: string, testName: string): string {
-  const stem = path.basename(source).replace(/\.[cm]?tsx?$/, "");
-  const name = testName.replace(/[^\w[\]-]+/g, "_").replace(/^_+|_+$/g, "");
-  return path.join(path.dirname(source), `${stem}.${name}${SUFFIX}`);
-}
+export const tempPathFor = (source: string, testName: string) =>
+  perTestFile(source, testName, SUFFIX);
 
 const withOneTrailingNewline = (body: string) => body.replace(/\s*$/, "\n");
 

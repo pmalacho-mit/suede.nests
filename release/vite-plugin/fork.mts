@@ -1,53 +1,60 @@
-// Per-test module isolation.
-//
-// A generated test is served with every first-party specifier carrying the
-// test's tag, so `./money.ts` is a different module for every test that reaches
-// it and state cannot leak from one to the next. `resolveId` reads the tag back
-// off the id — and drops it for a module the tests are meant to share.
 import { init, parse } from "es-module-lexer";
 
 import type { ImportSpecifier } from "es-module-lexer";
 import type { Expect, Invoke, Table } from "../dsl.import.meta.vitest.ts";
 
-/** The query a forked module id carries. */
 export const FORK = "namespace-test";
 
-/** The fork a module id belongs to, if any. */
 export const forkOf = (id: string) => {
   const [file = "", query = ""] = id.split("?");
   const tag = new URLSearchParams(query).get(FORK);
   return tag ? { file, tag } : null;
 };
 
-/**
- * Give a module's own imports the fork's tag. The specifiers come from the
- * module's own import statements, as `es-module-lexer` reads them off — never
- * by matching text: a string that merely *looks* like an import, a snippet of
- * source held in a constant say, must be left alone.
- */
-export async function fork(code: string, tag: string): Promise<string> {
-  let imports: readonly ImportSpecifier[];
-  try {
-    await init;
-    [imports] = parse(code);
-  } catch {
-    return code; // not lexable here; leave it to the rest of the pipeline
-  }
+type Edit = { start: number; end: number; text: string };
+
+const splice = (code: string, edits: Edit[]) => {
   let out = "";
   let last = 0;
-  // the lexer reports them in source order, so one pass rewrites them all
-  for (const { n: spec, s: start, e: end, d: dynamic } of imports) {
-    // `n` is undefined for `import.meta` and for a dynamic specifier that is
-    // not a plain string — neither names a module we could fork
-    if (!spec?.startsWith(".")) continue;
-    const tagged = `${spec}${spec.includes("?") ? "&" : "?"}${FORK}=${tag}`;
-    // a static import's span is the specifier inside its quotes; a dynamic
-    // one's is the whole literal, which may be a template
-    out += code.slice(last, start);
-    out += dynamic > -1 ? JSON.stringify(tagged) : tagged;
+  for (const { start, end, text } of edits) {
+    out += code.slice(last, start) + text;
     last = end;
   }
   return out + code.slice(last);
+};
+
+// read off the module's own import statements, never matched as text
+const importsIn = async (code: string): Promise<readonly ImportSpecifier[] | null> => {
+  try {
+    await init;
+    return parse(code)[0];
+  } catch {
+    return null;
+  }
+};
+
+type FirstParty = ImportSpecifier & { n: string };
+
+const isFirstParty = (specifier: ImportSpecifier): specifier is FirstParty =>
+  !!specifier.n?.startsWith(".");
+
+const withTag = (spec: string, tag: string) =>
+  `${spec}${spec.includes("?") ? "&" : "?"}${FORK}=${tag}`;
+
+// a static import's span is inside its quotes; a dynamic one's is the whole literal
+const retagged = ({ n, s, e, d }: FirstParty, tag: string): Edit => ({
+  start: s,
+  end: e,
+  text: d > -1 ? JSON.stringify(withTag(n, tag)) : withTag(n, tag),
+});
+
+export async function fork(code: string, tag: string): Promise<string> {
+  const imports = await importsIn(code);
+  if (!imports) return code;
+  return splice(
+    code,
+    imports.filter(isFirstParty).map((specifier) => retagged(specifier, tag)),
+  );
 }
 
 declare namespace fork {

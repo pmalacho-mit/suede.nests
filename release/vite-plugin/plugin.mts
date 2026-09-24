@@ -1,6 +1,3 @@
-// Vite plugin: appends generated Vitest code to any module whose
-// `declare namespace` blocks hold tests. Only loaded by Vitest; production
-// builds never see it.
 import ts from "typescript";
 import path from "node:path";
 import fs from "node:fs";
@@ -11,109 +8,42 @@ import { DERIVED, ensureDerived } from "./cache.mts";
 import { SUFFIX, collected, collectorLines, idFor } from "./collector.mts";
 import { SUFFIX as EXTRACTED } from "../extract.mts";
 import { FORK, fork, forkOf } from "./fork.mts";
-import { emittedFor, minimalFor } from "./minimal.mts";
+import { configFor, emittedFor, minimalFor } from "./minimal.mts";
 
 import type { Plugin, ViteUserConfig } from "vitest/config";
 import type { SourceMapSegment } from "@jridgewell/sourcemap-codec";
+import type { Line } from "./emit/context.mts";
 import type { Warning } from "./emit/index.mts";
 import type { Expect, Invoke } from "../dsl.import.meta.vitest.ts";
 
 export type Options = {
-  /**
-   * Only collect tests written inside this namespace.
-   *
-   * There is no default, and none is needed: a `declare namespace` holds tests
-   * because its exported aliases *are* tests — `Expect`, `Table`, `Throws`,
-   * `Given`, or one of those under a modifier — not because of what it is
-   * called. So a namespace can be named after whatever it covers:
-   *
-   * ```ts
-   * declare namespace parseDate {
-   *   export type Iso = Expect<Invoke<typeof parseDate, ["2020-01-01"]>, "=", …>;
-   * }
-   * ```
-   *
-   * Set this when you want the rest of a file's namespaces left alone.
-   */
+  /** Only collect tests from namespaces with this name; every namespace is read without it. */
   root?: string;
-  /** tsconfig file name, found upward from cwd. Default `"tsconfig.json"`. */
+  /** tsconfig file name, found upward from cwd. */
   tsconfig?: string;
-  /**
-   * Globs discovery skips, matched against each path relative to the project
-   * root — the same shape as Vitest's `exclude`. `node_modules` and
-   * dot-directories are always skipped, whatever this says.
-   *
-   * ```ts
-   * exclude: ["fixtures/**", "src/generated/**"]
-   * ```
-   */
+  /** Globs discovery skips, relative to the project root. `node_modules` and dot-directories are always skipped. */
   exclude?: string[];
-  /**
-   * Extra globs to collect tests from, matched by Vitest exactly as its own
-   * `include` is. Discovery already finds every file that imports the DSL, so
-   * this is for anything it would miss — or for naming files directly when
-   * `scan` is off.
-   *
-   * ```ts
-   * include: ["src/generated/**"]
-   * ```
-   */
+  /** Extra globs to collect tests from, as Vitest's `include`. */
   include?: string[];
   /** Glob for extracted tests, added to Vitest's `include`. `false` leaves them out. */
   extracted?: string | false;
-  /** Discover test files by scanning cwd. Default `true`. */
+  /** Discover test files by scanning cwd. */
   scan?: boolean;
-  /**
-   * Absolute path of the runtime generated code imports `recordForDisplay` from.
-   * Default: the plugin's own `runtime.mts`, or the package's when installed.
-   */
+  /** Absolute path of the runtime generated code imports from. */
   runtimeFile?: string;
-  /**
-   * Also discover tests inside this plugin's own folder.
-   *
-   * The library ships with tests of its own, written in its own DSL, and they
-   * are skipped by default so that vendoring the source does not add them to
-   * your suite. This repository is the one place they should run.
-   */
+  /** Also discover the library's own tests, which vendoring it must not add to a suite. */
   _scanSelf?: boolean;
-  /**
-   * Modules that must **not** be isolated per test, as glob patterns matched
-   * against each module's path relative to the project root — the same shape as
-   * Vitest's own `include`:
-   *
-   * ```ts
-   * noIsolateModuleImport: ["src/db/**", "src/registry.ts"]
-   * ```
-   *
-   * Each generated test carries its own copy of the module under test and, by
-   * default, its own copy of that module's first-party imports, so state a test
-   * mutates cannot leak into the next one. A module matched here is shared by
-   * every test instead — for a connection pool, a registry, or anything else
-   * meant to be singular.
-   *
-   * The patterns name *modules*, not the specifiers that import them, so one
-   * entry covers a module however its importers happen to spell the path.
-   *
-   * Packages are never isolated: Vitest hands them to Node, which has no notion
-   * of the query this uses to fork a module.
-   */
+  /** Globs, relative to the project root, of modules every test shares instead of getting its own copy. */
   noIsolateModuleImport?: string[];
 };
 
-/**
- * What Vitest was told to match test names against, as a pattern.
- *
- * `-t` arrives as the string the user typed; a config file may give a RegExp.
- * Either way it is a *pattern*, exactly as Vitest reads it — so `-t "Rows[0]"`
- * is a character class and matches `Rows0`, not `Rows[0]`.
- */
 export function testNameFilter(pattern: unknown): RegExp | null {
   if (pattern instanceof RegExp) return pattern;
   if (typeof pattern !== "string" || !pattern) return null;
   try {
     return new RegExp(pattern);
   } catch {
-    return null; // Vitest will report the bad pattern; we simply do not filter
+    return null;
   }
 }
 
@@ -153,8 +83,166 @@ const matchesCounter = (filter: RegExp | null) =>
 const readsAsPattern = (filter: RegExp | null) =>
   !!filter?.test("add > Rows0") && !filter.test("add > Rows[0]");
 
-/** Vitest's own default, spelled out for a project that never set `include`. */
-const DEFAULT_INCLUDE = ["**/*.{test,spec}.?(c|m)[jt]s?(x)"];
+const posix = (file: string) => file.split(path.sep).join("/");
+
+const relativeTo = (dir: string, file: string) => posix(path.relative(dir, file));
+
+const isTypeScript = (file: string) => /\.[cm]?tsx?$/.test(file);
+
+// line-anchored, so a mention in a comment is not one; the printer decides what is a test
+const testNamespaceMarker = (root?: string) =>
+  new RegExp(`^\\s*declare\\s+namespace\\s+${root ?? "\\w"}`, "m");
+
+type Versioned = { version: number; snapshot: ts.IScriptSnapshot };
+
+const textOf = (snapshot: ts.IScriptSnapshot) =>
+  snapshot.getText(0, snapshot.getLength());
+
+function languageService(cwd: string, tsconfig: string) {
+  const config = configFor(tsconfig, cwd);
+  const roots = new Set<string>(config.fileNames);
+  const versions = new Map<string, number>();
+  const snapshots = new Map<string, Versioned>();
+  const versionOf = (file: string) => versions.get(file) ?? 0;
+
+  const store = (file: string, text: string) => {
+    const snapshot = ts.ScriptSnapshot.fromString(text);
+    snapshots.set(file, { version: versionOf(file), snapshot });
+    return snapshot;
+  };
+
+  const snapshotOf = (file: string) => {
+    const cached = snapshots.get(file);
+    if (cached?.version === versionOf(file)) return cached.snapshot;
+    if (!fs.existsSync(file)) return undefined;
+    return store(file, fs.readFileSync(file, "utf8"));
+  };
+
+  const service = ts.createLanguageService(
+    {
+      getScriptFileNames: () => [...roots],
+      getScriptVersion: (file) => String(versionOf(file)),
+      getScriptSnapshot: snapshotOf,
+      getCurrentDirectory: () => cwd,
+      getCompilationSettings: () => config.options,
+      getDefaultLibFileName: ts.getDefaultLibFilePath,
+      fileExists: ts.sys.fileExists,
+      readFile: ts.sys.readFile,
+      directoryExists: ts.sys.directoryExists,
+      getDirectories: ts.sys.getDirectories,
+      ...(ts.sys.realpath ? { realpath: ts.sys.realpath } : {}),
+    },
+    ts.createDocumentRegistry(),
+  );
+
+  const inputFor = (file: string) => {
+    const program = service.getProgram();
+    const source = program?.getSourceFile(file);
+    return program && source ? { program, source } : null;
+  };
+
+  return {
+    changed(file: string) {
+      versions.set(file, versionOf(file) + 1);
+    },
+    inputFor,
+    inputAsWritten(file: string, code: string) {
+      roots.add(file);
+      const current = snapshots.get(file);
+      if (!current || textOf(current.snapshot) !== code) {
+        this.changed(file);
+        store(file, code);
+      }
+      return inputFor(file);
+    },
+  };
+}
+
+type Discovery = { cwd: string; exclude: string[]; marker: RegExp; skip: string | null };
+
+// `src/fixtures/**` should stop the walk at `src/fixtures`, not only reject what is under it
+const asDirectories = (globs: string[]) =>
+  globs.map((glob) => glob.replace(/\/\*\*(\/\*)?$/, ""));
+
+const isHidden = (entry: fs.Dirent) =>
+  entry.name === "node_modules" || entry.name.startsWith(".");
+
+function testModuleFinder({ cwd, exclude, marker, skip }: Discovery) {
+  const excluded = picomatch(exclude, { dot: true });
+  const excludedDir = picomatch(asDirectories(exclude), { dot: true });
+
+  const holdsTests = (file: string) =>
+    isTypeScript(file) &&
+    !file.endsWith(".d.ts") &&
+    !excluded(relativeTo(cwd, file)) &&
+    marker.test(fs.readFileSync(file, "utf8"));
+
+  function* under(dir: string): Generator<string> {
+    if (path.resolve(dir) === skip) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (isHidden(entry)) continue;
+      const at = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!excludedDir(relativeTo(cwd, at))) yield* under(at);
+      } else if (holdsTests(at)) yield at;
+    }
+  }
+  return under;
+}
+
+const library = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+
+const bundledRuntime = fileURLToPath(new URL("./runtime.mts", import.meta.url));
+
+const isInstalled = (file: string) =>
+  file.includes(`${path.sep}node_modules${path.sep}`);
+
+const importPath = (importer: string, file: string) => {
+  const rel = relativeTo(path.dirname(importer), file);
+  return rel.startsWith(".") ? rel : `./${rel}`;
+};
+
+// an installed runtime is imported by its package name, which is the printer's default
+const runtimeImporter = (runtimeFile?: string) => {
+  const file = runtimeFile ?? (isInstalled(bundledRuntime) ? null : bundledRuntime);
+  return (importer: string) => (file ? importPath(importer, file) : undefined);
+};
+
+const VITEST_DEFAULT_INCLUDE = ["**/*.{test,spec}.?(c|m)[jt]s?(x)"];
+
+// Vite appends a plugin's `include` to the user's, so it replaces only Vitest's default
+const includeFor = (extracted: string | false, userInclude: unknown) => {
+  const collectsNothing = Array.isArray(userInclude) && !userInclude.length;
+  if (!extracted || collectsNothing) return {};
+  return { include: userInclude ? [extracted] : [...VITEST_DEFAULT_INCLUDE, extracted] };
+};
+
+// each collector import maps to the line of the `export type` it runs
+const collectorSourceMap = (id: string, code: string, collector: Line[]) => {
+  const lines: SourceMapSegment[][] = code
+    .split("\n")
+    .map((_, line) => [[0, 0, line, 0]]);
+  for (const { line } of collector)
+    lines.push(line === null ? [] : [[2, 0, line, 0]]);
+  return {
+    version: 3,
+    file: id,
+    sources: [id],
+    sourcesContent: [code],
+    names: [],
+    mappings: encode(lines),
+  };
+};
+
+const writeDiagnostics = (diagnostics: Record<string, Warning[]>) => {
+  ensureDerived();
+  fs.writeFileSync(
+    path.join(DERIVED, "diagnostics.json"),
+    JSON.stringify(diagnostics, null, 2),
+  );
+};
+
+const withoutQuery = (id: string) => id.split("?")[0] ?? id;
 
 export default function namespaceTests({
   root,
@@ -162,292 +250,116 @@ export default function namespaceTests({
   exclude = ["scratch"],
   include = [],
   extracted = `**/*${EXTRACTED}`,
-  scan: doScan = true,
+  scan = true,
   runtimeFile,
   _scanSelf: scanSelf = false,
   noIsolateModuleImport = [],
 }: Options = {}): Plugin {
-  // line-anchored: skips mentions in comments. Whether a namespace holds tests
-  // is settled by the printer, which looks at what its aliases are.
-  const marker = new RegExp(
-    `^\\s*declare\\s+namespace\\s+${root ?? "\\w"}`,
-    "m",
-  );
   const cwd = process.cwd();
-  /** file (relative) → warnings, written to .derived/diagnostics.json */
+  const marker = testNamespaceMarker(root);
   const diagnostics: Record<string, Warning[]> = {};
-
-  // ── one LanguageService per plugin instance; files are re-read only when Vite reports a change ──
-  const cfgPath = ts.findConfigFile(cwd, ts.sys.fileExists, tsconfig);
-  if (!cfgPath)
-    throw new Error(`namespace-tests: cannot find ${tsconfig} from ${cwd}`);
-  const parsed = ts.parseJsonConfigFileContent(
-    ts.readConfigFile(cfgPath, ts.sys.readFile).config,
-    ts.sys,
-    path.dirname(cfgPath),
-  );
-  const roots = new Set<string>(parsed.fileNames);
-  /** file → version (bumped by watchChange) */
-  const versions = new Map<string, number>();
-  /** file → snapshot for a version */
-  const snapshots = new Map<
-    string,
-    { version: number; snapshot: ts.IScriptSnapshot }
-  >();
-  const snapshot = (f: string): ts.IScriptSnapshot | undefined => {
-    const v = versions.get(f) ?? 0;
-    const cached = snapshots.get(f);
-    if (cached && cached.version === v) return cached.snapshot;
-    if (!fs.existsSync(f)) return undefined;
-    const snap = ts.ScriptSnapshot.fromString(fs.readFileSync(f, "utf8"));
-    snapshots.set(f, { version: v, snapshot: snap });
-    return snap;
-  };
-  const host: ts.LanguageServiceHost = {
-    getScriptFileNames: () => [...roots],
-    getScriptVersion: (f) => String(versions.get(f) ?? 0),
-    getScriptSnapshot: snapshot,
-    getCurrentDirectory: () => cwd,
-    getCompilationSettings: () => parsed.options,
-    getDefaultLibFileName: ts.getDefaultLibFilePath,
-    fileExists: ts.sys.fileExists,
-    readFile: ts.sys.readFile,
-    directoryExists: ts.sys.directoryExists,
-    getDirectories: ts.sys.getDirectories,
-    ...(ts.sys.realpath ? { realpath: ts.sys.realpath } : {}),
-  };
-  const service = ts.createLanguageService(host, ts.createDocumentRegistry());
-
-  // This library ships with tests of its own, written in its own DSL. They are
-  // ours to run, not yours: discovery skips the folder this plugin lives in, so
-  // vendoring the source does not add our tests to your suite.
-  const self = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-
-  const relative = (file: string) =>
-    path.relative(cwd, file).split(path.sep).join("/");
-  const excluded = picomatch(exclude, { dot: true });
-  // `src/fixtures/**` should stop the walk at `src/fixtures`, not only reject
-  // the files under it
-  const excludedDir = picomatch(
-    exclude.map((pattern) => pattern.replace(/\/\*\*(\/\*)?$/, "")),
-    { dot: true },
-  );
-
-  /** Files under `dir` that contain a test namespace. */
-  const scan = (dir: string, acc: string[] = []): string[] => {
-    if (!scanSelf && path.resolve(dir) === self) return acc;
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (e.name === "node_modules" || e.name.startsWith(".")) continue;
-      const p = path.join(dir, e.name);
-      if (e.isDirectory()) {
-        if (!excludedDir(relative(p))) scan(p, acc);
-      } else if (
-        /\.[cm]?tsx?$/.test(e.name) &&
-        !e.name.endsWith(".d.ts") &&
-        !excluded(relative(p)) &&
-        marker.test(fs.readFileSync(p, "utf8"))
-      )
-        acc.push(p);
-    }
-    return acc;
-  };
-  /** The runtime, as the file being transformed would import it. */
-  const own = fileURLToPath(new URL("./runtime.mts", import.meta.url));
-  const packaged = own.includes(`${path.sep}node_modules${path.sep}`);
-  const file = runtimeFile ?? (packaged ? null : own);
-  const runtimeFor = (id: string) => {
-    if (!file) return undefined; // installed as a package: import it by name
-    const rel = path.relative(path.dirname(id), file).split(path.sep).join("/");
-    return rel.startsWith(".") ? rel : `./${rel}`;
-  };
-
-  // ── generated test modules ────────────────────────────────────────────
-  // Each test becomes its own module: the part of the source it needs, plus one
-  // `test(…)`. They are never written to disk — the ids resolve here.
-
-  /** virtual test module id → the test it runs. */
+  const service = languageService(cwd, tsconfig);
+  const testModulesUnder = testModuleFinder({
+    cwd,
+    exclude,
+    marker,
+    skip: scanSelf ? null : library,
+  });
+  const runtimeFor = runtimeImporter(runtimeFile);
+  const shared = picomatch(noIsolateModuleImport);
+  const isShared = (file: string) => shared(relativeTo(cwd, file));
   const generated = new Map<string, { source: string; test: string }>();
-
-  /** `-t` from the command line: generate only the tests that will run. */
   let only: RegExp | null = null;
 
-  /**
-   * Give a module's own imports the fork's tag, so each test gets its own
-   * instance of everything first-party that its subject reaches — unless the
-   * specifier is listed in `noIsolateModuleImport`.
-   */
-  // picomatch is what Vitest matches its own `include` / `exclude` with, so a
-  // pattern means here exactly what it means there
-  const shared = picomatch(noIsolateModuleImport);
-
-  /** Is this module one the tests are meant to share? */
-  const isShared = (file: string) => {
-    const rel = path.relative(cwd, file).split(path.sep).join("/");
-    return shared(rel);
+  const report = (id: string, warnings: Warning[], warn: (message: string) => void) => {
+    const rel = path.relative(cwd, id);
+    diagnostics[rel] = warnings;
+    writeDiagnostics(diagnostics);
+    for (const w of warnings) warn(`${rel}:${w.line + 1}:${w.column + 1} ${w.message}`);
   };
 
-
-  /** The program the plugin already built, if it holds `file`. */
-  const sourceFor = (file: string) => {
-    const program = service.getProgram();
-    const source = program?.getSourceFile(file);
-    return program && source ? { input: { program, source } } : null;
-  };
-
-  const writeDiagnostics = () => {
-    ensureDerived();
-    fs.writeFileSync(
-      path.join(DERIVED, "diagnostics.json"),
-      JSON.stringify(diagnostics, null, 2),
-    );
-  };
+  const register = (source: string, tests: { name: string; line: number }[]) =>
+    tests
+      .filter((t) => !only || only.test(t.name))
+      .map((t) => {
+        const id = idFor(source, t.name);
+        generated.set(id, { source, test: t.name });
+        return { id, line: t.line };
+      });
 
   return {
     name: "namespace-tests",
-    enforce: "pre", // see the original TypeScript before vite:esbuild/oxc strips the namespaces
-    config(userConfig: ViteUserConfig) {
-      // Vitest finds a module with tests by globbing `includeSource` and keeping
-      // whatever contains `import.meta.vitest` — which every file importing the
-      // DSL does, since the DSL's own filename carries the marker.
-      const files = doScan ? scan(cwd).map((f) => path.relative(cwd, f)) : [];
-      const userInclude = userConfig.test?.include;
-      const collectsNothing = Array.isArray(userInclude) && !userInclude.length;
-      const cfg: ViteUserConfig = {
+    // before vite:esbuild/oxc strips the namespaces
+    enforce: "pre",
+    config(userConfig: ViteUserConfig): ViteUserConfig {
+      const files = scan ? [...testModulesUnder(cwd)].map((f) => path.relative(cwd, f)) : [];
+      return {
         test: {
           includeSource: [...files, ...include],
           includeTaskLocation: true,
-          // an extracted test is an ordinary test file, but one that no project's
-          // `include` is written to catch
-          // Vite concatenates what a plugin returns onto what the user wrote,
-          // so this adds to their `include` rather than replacing it — but a
-          // project that never set one would lose Vitest's default, which is
-          // why that is spelled out here. An `include: []` is left alone: it
-          // says to collect nothing, and that includes these.
-          ...(extracted && !collectsNothing
-            ? {
-                include: userInclude
-                  ? [extracted]
-                  : [...DEFAULT_INCLUDE, extracted],
-              }
-            : {}),
+          ...includeFor(extracted, userConfig.test?.include),
         },
       };
-      return cfg;
     },
 
     configResolved(config) {
-      // `-t` arrives as the string the user typed, or as a RegExp when it came
-      // from a config file. Vitest reads either as a pattern, so we do too.
       const pattern = (config as { test?: { testNamePattern?: unknown } }).test
         ?.testNamePattern;
       only = testNameFilter(pattern);
     },
 
-    resolveId(id, importer) {
+    async resolveId(id, importer) {
       if (generated.has(id)) return id;
       const forked = forkOf(id);
       if (!forked) return null;
-      // Resolve the module normally, then key it by the fork it belongs to.
-      // `lang.<ext>` is Vite's convention for telling the pipeline how to parse
-      // an id whose query hides its extension — without it, a forked `.ts` file
-      // is handed to the JavaScript parser.
-      return this.resolve(forked.file, importer, { skipSelf: true }).then(
-        (resolved) => {
-          if (!resolved) return null;
-          const file = resolved.id.split("?")[0] ?? resolved.id;
-          // a module the tests share keeps its own id, so every fork of every
-          // test resolves to the one instance
-          if (isShared(file)) return resolved.id;
-          return `${resolved.id}?${FORK}=${forked.tag}&lang${path.extname(file)}`;
-        },
-      );
+      const resolved = await this.resolve(forked.file, importer, { skipSelf: true });
+      if (!resolved) return null;
+      const file = withoutQuery(resolved.id);
+      if (isShared(file)) return resolved.id;
+      // `lang.<ext>` tells Vite how to parse an id whose query hides its extension
+      return `${resolved.id}?${FORK}=${forked.tag}&lang${path.extname(file)}`;
     },
 
     load(id) {
       const entry = generated.get(id);
       if (!entry) return null;
-      // the whole point: one test, and only the code it needs to run
+      const input = service.inputFor(entry.source);
+      const runtime = runtimeFor(id);
       return fork(
         minimalFor(entry.source, entry.test, {
           root,
           tsconfig,
-          ...(runtimeFor(id) ? { runtime: runtimeFor(id)! } : {}),
-          // the service already holds this file; building a second program for
-          // it would type-check everything it imports all over again
-          ...(sourceFor(entry.source) ?? {}),
+          ...(runtime ? { runtime } : {}),
+          ...(input ? { input } : {}),
         }),
         path.basename(id, SUFFIX),
       );
     },
+
     watchChange(id) {
-      versions.set(id, (versions.get(id) ?? 0) + 1);
+      service.changed(id);
       for (const [generatedId, entry] of generated)
         if (entry.source === id) generated.delete(generatedId);
     },
+
     async transform(code, rawId) {
-      const id = rawId.split("?")[0] ?? rawId;
-      // a forked module: hand its own imports the same tag, so the fork is deep
       const forked = forkOf(rawId);
       if (forked) return { code: await fork(code, forked.tag), map: null };
 
-      if (!/\.[cm]?tsx?$/.test(id) || !marker.test(code)) return null;
-      roots.add(id);
-      // Vite hands us the current content; make sure the service sees the same text.
-      const current = snapshots.get(id);
-      if (
-        !current ||
-        current.snapshot.getText(0, current.snapshot.getLength()) !== code
-      ) {
-        const v = (versions.get(id) ?? 0) + 1;
-        versions.set(id, v);
-        snapshots.set(id, {
-          version: v,
-          snapshot: ts.ScriptSnapshot.fromString(code),
-        });
-      }
-      const program = service.getProgram();
-      const sf = program?.getSourceFile(id);
-      if (!program || !sf) return null;
-      const emitted = emittedFor({ program, source: sf }, root, runtimeFor(id));
-      const { warnings, tests } = emitted;
-      const rel = path.relative(cwd, id);
-      diagnostics[rel] = warnings;
-      writeDiagnostics();
-      for (const w of warnings)
-        this.warn(`${rel}:${w.line + 1}:${w.column + 1} ${w.message}`);
-      if (!tests.length) return null;
+      const id = withoutQuery(rawId);
+      if (!isTypeScript(id) || !marker.test(code)) return null;
+      const input = service.inputAsWritten(id, code);
+      if (!input) return null;
+      const { warnings, tests } = emittedFor(input, root, runtimeFor(id));
+      report(id, warnings, (message) => this.warn(message));
 
-      // Register one module per test, then append the collector that pulls them
-      // in. `import.meta.vitest` is Vitest's own answer to "is this file the one
-      // being collected", so a module that is merely imported adds nothing.
-      const filter = only;
-      const wanted = filter ? tests.filter((t) => filter.test(t.name)) : tests;
-      const imports = wanted.map((t) => {
-        const generatedId = idFor(id, t.name);
-        generated.set(generatedId, { source: id, test: t.name });
-        return { id: generatedId, line: t.line };
-      });
+      const imports = register(id, tests);
       if (!imports.length) return null;
       const collector = collectorLines(imports);
-
-      // Each import is anchored to the `export type` it runs, so Vitest reports
-      // the test at the line it was written on.
-      const origLines = code.split("\n").length;
-      const lines: SourceMapSegment[][] = Array.from(
-        { length: origLines },
-        (_, l) => [[0, 0, l, 0]],
-      );
-      for (const l of collector)
-        lines.push(l.line === null ? [] : [[2, 0, l.line, 0]]);
-      const map = {
-        version: 3,
-        file: id,
-        sources: [id],
-        sourcesContent: [code],
-        names: [],
-        mappings: encode(lines),
+      return {
+        code: collected(code, collector),
+        map: collectorSourceMap(id, code, collector),
       };
-      return { code: collected(code, collector), map };
     },
   };
 }
