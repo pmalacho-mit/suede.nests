@@ -34,7 +34,8 @@ const DESCRIPTION = [
   "  cli.mts <file> <test>             the test, as it would be extracted",
   "  cli.mts <file> <test> --served    as a run serves it, imports tagged per test",
   "  cli.mts <file> --collector        the module Vitest is handed for the file",
-  "  cli.mts --clean [dir]             delete extracted tests under dir, and the cache",
+  "  cli.mts --clean [dir]             delete extracted tests (searched recursively from",
+  "                                    dir, default: the current working directory) and the cache",
 ].join("\n");
 
 /**
@@ -60,7 +61,7 @@ const parse = (argv: string[]) => {
     ),
     cli.flag(
       "clean-extracted",
-      "Delete the tests extracted into files under a directory (default: here). One that has been edited since is kept, unless --force.",
+      "Delete extracted tests, searched for recursively from the positional directory argument (default: the current working directory). One edited since it was extracted is kept, unless --force.",
       false,
     ),
     cli.flag(

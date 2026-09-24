@@ -224,9 +224,9 @@ configure.
 To start over:
 
 ```
-node release/cli.mts --clean-extracted [dir]   # extracted tests under dir (default: here)
+node release/cli.mts --clean-extracted [dir]   # extracted tests, searched recursively from dir (default: cwd)
 node release/cli.mts --clean-cache             # printed tests, and Node's compiled modules
-node release/cli.mts --clean [dir]             # both
+node release/cli.mts --clean [dir]             # both of the above
 ```
 
 An extracted test is recognised by the header the editor writes, not by its
