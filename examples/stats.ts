@@ -1,4 +1,10 @@
-import type { Expect, Invoke, Table, Widen, Configure } from "../release/dsl.import.meta.vitest.ts";
+import type {
+  Expect,
+  Invoke,
+  Table,
+  Widen,
+  Configure,
+} from "../release/dsl.import.meta.vitest.ts";
 
 export function mean(xs: ArrayLike<number>): number {
   if (xs.length === 0) return NaN;
@@ -90,7 +96,7 @@ declare namespace Tests.histogram {
     Invoke<typeof histogram, [[1, 1, 1, 2, 3, 5, 8, 13], 4, 0, 16]>,
     "=",
     [5, 1, 1, 1],
-    "./display-histogram.html"
+    "./fixtures/display-histogram.html"
   >;
 }
 
