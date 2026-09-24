@@ -69,7 +69,7 @@ export type Emitted = {
  * namespace path it was written in, as written.
  *
  * @param root Only look inside this namespace. Nothing is skipped without it.
- * @param runtime Specifier the generated code imports `ntCheck` from.
+ * @param runtime Specifier the generated code imports `recordForDisplay` from.
  */
 export function emitTests(
   { program, source }: EmitInput,

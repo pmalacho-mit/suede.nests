@@ -534,65 +534,84 @@ const worthBinding = (code: string) => !isIdentifier(code) && code !== "undefine
  * @param nth Which assertion of the body this is, when there is more than one:
  *   `actual2` pairs with `expected2`, so a body of several says which is which.
  */
+const printActual = (a: Assertion) => {
+  const printed = printExpr(a.actual);
+  if (a.condition === "throws")
+    return `${rejectsFor(a) ? "async " : ""}() => (${printed})`;
+  return comparesAsArrays(a) ? `Array.from(${printed})` : printed;
+};
+
+const comparesAsArrays = (a: Assertion) =>
+  (a.condition === "=" || a.condition === "!=") &&
+  a.shape === "typedArray" &&
+  a.expected?.kind === "array";
+
+type Bound = { pre: string[]; subject: string; expected: string | null };
+
+const bindOperands = (a: Assertion, scope: Names, nth: string): Bound => {
+  const actual = printActual(a);
+  const expected = a.expected ? printExpr(a.expected) : null;
+  if (a.condition === "throws") return { pre: [], subject: actual, expected };
+  const pre: string[] = [];
+  const bind = (base: string, value: string) => {
+    const name = scope.take(`${base}${nth}`);
+    pre.push(`const ${name} = ${value};`);
+    return name;
+  };
+  const subject = worthBinding(actual) ? bind("actual", actual) : actual;
+  const bindsExpected =
+    expected !== null &&
+    a.expected?.kind !== "snapshot" &&
+    worthBinding(expected);
+  return {
+    pre,
+    subject,
+    expected: bindsExpected ? bind("expected", expected) : expected,
+  };
+};
+
+const property = (key: string, value: string) =>
+  key === value ? key : `${key}: ${value}`;
+
+const displayStatements = (a: Assertion, { subject, expected }: Bound) => {
+  if (!a.display) return [];
+  const values = [
+    property("actual", subject),
+    ...(expected !== null && a.expected?.kind !== "snapshot"
+      ? [property("expected", expected)]
+      : []),
+    ...(a.display.meta ? [`meta: ${printExpr(a.display.meta)}`] : []),
+  ];
+  return [
+    `recordForDisplay(task, ${quote(a.display.page)}, { ${values.join(", ")} });`,
+  ];
+};
+
+const expectation = (a: Assertion, c: Chain, subject: string) => {
+  const statement = `${a.soft ? "expect.soft" : "expect"}(${c.subject ?? subject})${printChain(c)};`;
+  return c.rejects ? `await ${statement}` : statement;
+};
+
+/**
+ * @param nth Which assertion of the body this is, when there is more than one:
+ *   `actual2` pairs with `expected2`.
+ */
 export function printAssertion(
   a: Assertion,
   scope = names([]),
   nth = "",
 ): string[] {
-  const { condition: op, display, soft } = a;
-  const expectFn = !display && soft ? "expect.soft" : "expect";
-  const actual =
-    op === "throws"
-      ? `${rejectsFor(a) ? "async " : ""}() => (${printExpr(a.actual)})`
-      : // typed array vs tuple: compare as plain arrays
-        (op === "=" || op === "!=") &&
-          a.shape === "typedArray" &&
-          a.expected?.kind === "array"
-        ? `Array.from(${printExpr(a.actual)})`
-        : printExpr(a.actual);
-  const pre: string[] = [];
-  let expected = a.expected ? printExpr(a.expected) : "undefined";
-  // A thunk is the subject of `throws`, and `ntCheck` is handed the real one to
-  // await itself; everything else reads better — and debugs far better — as a
-  // value with a name on it.
-  let subject = actual;
-  const named = op !== "throws" && !display;
-  if (named && worthBinding(actual)) {
-    subject = scope.take(`actual${nth}`);
-    pre.push(`const ${subject} = ${actual};`);
-  }
-  // a snapshot is not a value to bind: it names a file, and the matcher takes it
-  if (named && a.expected?.kind !== "snapshot" && worthBinding(expected)) {
-    const name = scope.take(`expected${nth}`);
-    pre.push(`const ${name} = ${expected};`);
-    expected = name;
-  } else if (
-    a.expected &&
-    awaits(a.expected) &&
-    (display || op === "satisfies" || op === "some" || op === "every")
-  ) {
-    // an expected value that awaits cannot sit inside a callback: hoist it
-    const name = scope.take(`expected${nth}`);
-    pre.push(`const ${name} = ${expected};`);
-    expected = name;
-  }
-  const c = matchers[op](a, {
-    actual: subject,
-    expected,
+  const operands = bindOperands(a, scope, nth);
+  const chain = matchers[a.condition](a, {
+    actual: operands.subject,
+    expected: operands.expected ?? "undefined",
     param: a.param ? printExpr(a.param) : "undefined",
   });
-  const text = printChain(c);
-  // a derived subject is asserted on directly — ntCheck only ever sees the real one
-  if (c.subject !== undefined)
-    return [...pre, `${expectFn}(${c.subject})${text};`];
-  if (display)
-    // ntCheck runs the same matcher, and records what it saw on task.meta for the IDE
-    return [
-      ...pre,
-      `await ntCheck(task, { display: ${quote(display.page)}, meta: ${display.meta ? printExpr(display.meta) : "undefined"}, soft: ${soft}, condition: ${quote(text)} }, async () => ${actual}, ${expected}, (actual) => ${expectFn}(actual)${text});`,
-    ];
-  const statement = `${expectFn}(${subject})${text};`;
-  return [...pre, c.rejects ? `await ${statement}` : statement];
+  return [
+    ...operands.pre,
+    ...displayStatements(a, operands),
+    expectation(a, chain, operands.subject),
+  ];
 }
 
 export const printStatement = (
@@ -637,7 +656,7 @@ export type Needs = {
   fs: boolean;
   /** `nt_env`, for an `Env` with no default. */
   env: boolean;
-  /** `ntCheck` and the `{ task }` parameter, for a display page. */
+  /** `recordForDisplay` and the `{ task }` parameter, for a display page. */
   task: boolean;
   /** `nt_unsupported`, for what could not be materialised. */
   unsupported: boolean;
@@ -700,14 +719,8 @@ const statementAwaits = (s: Statement) =>
   exprsOf(s).some(awaits) ||
   (s.kind === "assert" && s.condition === "throws" && rejectsFor(s));
 
-/**
- * Does the test have to be an async function? Only if something in it is
- * awaited: a statement, a `const` binding of its own, or `ntCheck`, which is
- * always awaited. A generic alias that awaits carries its own `async`, so it
- * says nothing about the test around it.
- */
-const isAsync = (t: TestCase, needs: Needs) =>
-  needs.task ||
+// a generic alias that awaits is an async arrow of its own, so it does not count
+const isAsync = (t: TestCase) =>
   t.bindings.some((b) => !b.params && awaits(b.value)) ||
   t.body.some(statementAwaits);
 
@@ -723,7 +736,7 @@ export function printTest(t: TestCase): EmittedTest {
       : [
           ...doc,
           {
-            code: `${t.mode}(${quote(t.name)}${Object.keys(t.options).length ? `, ${JSON.stringify(t.options)}` : ""}, ${isAsync(t, needs) ? "async " : ""}(${needs.task ? "{ task }" : ""}) => {`,
+            code: `${t.mode}(${quote(t.name)}${Object.keys(t.options).length ? `, ${JSON.stringify(t.options)}` : ""}, ${isAsync(t) ? "async " : ""}(${needs.task ? "{ task }" : ""}) => {`,
             line: t.line,
           },
           ...t.bindings.map((b) => ({
@@ -748,7 +761,7 @@ export function headerLines(needs: Needs, runtime: string): string[] {
   const lines = [
     `// ───────── generated by namespace-tests; not part of your build ─────────`,
     `import { test, expect } from "vitest";`,
-    needs.task && `import { ntCheck } from ${quote(runtime)};`,
+    needs.task && `import { recordForDisplay } from ${quote(runtime)};`,
     needs.fs && `import { readFileSync } from "node:fs";`,
     ...[...needs.imports].flatMap(([spec, names]) => {
       const namespace = [...names].filter((n) => n.startsWith("* as "));

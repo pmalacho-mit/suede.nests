@@ -33,8 +33,6 @@ export type DisplayResult = {
   /** What it was compared against. */
   expected: unknown;
   passed: boolean;
-  /** The matcher chain, as the printer wrote it: `.toEqual([1, 2])`. */
-  condition: string;
   /** The assertion error, when it failed. */
   message: string | null;
   /** `displayMeta` from the test's config, or null. */

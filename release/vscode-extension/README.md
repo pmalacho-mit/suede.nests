@@ -29,22 +29,13 @@ line you wrote it on. Running one runs exactly that one.
   your own code. The frames from Vitest, chai and Node are dropped, as are the
   ones pointing into the generated test, since that module is served from
   memory and its path opens nothing.
-- **Display** — on a test that names an HTML page
-  (`Expect<…, "./chart.html">`): opens the page with what the run saw, so a
-  failing histogram is a chart rather than a wall of numbers. Your page *is* the
-  webview — it is served as the webview's own document, not nested in a frame —
-  so it works the same in desktop VS Code and in an editor running in a browser,
-  and it can use VS Code's `--vscode-*` theme variables. Listen for `message`
-  before the page has finished loading and you are sent
-  `namespace-tests:result` — no need to announce yourself, though a page that
-  does, through `window.parent`, still works even where the editor hides it — with `actual`, `expected`, `passed`, `condition`,
-  `message` and `meta`. The page is found relative to the test's file; one
-  that is not there is marked as an error on the string that names it — a test
-  does not fail for it, so that is where you would notice. Only JSON crosses
-  into a webview, so the values travel
-  encoded and are decoded in the page by the same codec that wrote them — a
-  `Uint8Array`, a `Map` or a `bigint` arrives as itself. Re-running redraws the
-  page from disk, so it starts clean.
+- **Display** — on a test that names an HTML page (`Expect<…, "./chart.html">`),
+  opens that page with what the run saw: a chart instead of a wall of numbers.
+  The page is found relative to the test's file; a missing one is marked as an
+  error where it is named. The page receives a `namespace-tests:result` message
+  with `actual`, `expected`, `passed`, `message` and `meta`, decoded so a `Map`
+  or a `bigint` arrives as itself. Listen for it before the page finishes
+  loading. It can use VS Code's `--vscode-*` theme variables.
 - **Diagnostics** — what the printer could not turn into a value, reported where
   you wrote it, before anything runs.
 

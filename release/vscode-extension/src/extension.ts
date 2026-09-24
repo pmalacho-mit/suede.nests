@@ -66,7 +66,7 @@ export function activate(context: vscode.ExtensionContext): void {
   /** What each test is doing, keyed by test id. Drives the lenses. */
   const outcomes = new Map<string, Outcome>();
   /** What the last run saw for a test with a display page, keyed by test id. */
-  const displays = new Map<string, Recorded>();
+  const displays = new Map<string, Shown>();
   /** Display panels on screen, so a re-run redraws what is already open. */
   const panels = new Map<string, vscode.WebviewPanel>();
   /** The page each open panel shows. */
@@ -222,10 +222,7 @@ export function activate(context: vscode.ExtensionContext): void {
             );
           continue;
         }
-        // a table's rows are several assertions; the first with a page wins
-        const shown = assertions
-          .map((a) => details.get(a.title)?.display)
-          .find(Boolean);
+        const shown = shownOnPage(assertions, details);
         if (shown) displays.set(item.id, shown);
         const failed = assertions.filter((a) => a.status === "failed");
         if (failed.length) {
@@ -379,7 +376,6 @@ export function activate(context: vscode.ExtensionContext): void {
       actual: recorded.actual,
       expected: recorded.expected,
       passed: recorded.passed,
-      condition: recorded.condition,
       message: recorded.message,
       meta: recorded.meta ?? null,
     });
@@ -845,11 +841,27 @@ type Detail = {
 type Recorded = {
   display: string;
   meta: unknown;
-  condition: string;
-  passed: boolean;
   actual: unknown;
   expected: unknown;
-  message: string | null;
+};
+
+type Shown = Recorded & { passed: boolean; message: string | null };
+
+// a table's rows are several assertions: the first with a page is the one shown
+const shownOnPage = (
+  assertions: Assertion[],
+  details: Map<string, Detail>,
+): Shown | null => {
+  for (const assertion of assertions) {
+    const detail = details.get(assertion.title);
+    if (detail?.display)
+      return {
+        ...detail.display,
+        passed: assertion.status === "passed",
+        message: detail.message || null,
+      };
+  }
+  return null;
 };
 
 /** Run a file's tests, or one of them, and hand back what Vitest reported. */

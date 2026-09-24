@@ -15,7 +15,7 @@ import type { Binding, Expr } from "./ir.mts";
  */
 export const DSL_FILE = /dsl\.import\.meta\.vitest\.ts$/;
 
-/** Where generated code imports `ntCheck` from, unless the plugin says otherwise. */
+/** Where generated code imports `recordForDisplay` from, unless the plugin says otherwise. */
 export const RUNTIME_MODULE = "@namespace-tests/vite-plugin/runtime";
 
 /** An authoring problem found while printing. Positions are 0-based. */

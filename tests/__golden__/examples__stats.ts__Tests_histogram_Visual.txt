@@ -1,5 +1,5 @@
 import { test, expect } from "vitest";
-import { ntCheck } from "@namespace-tests/vite-plugin/runtime";
+import { recordForDisplay } from "@namespace-tests/vite-plugin/runtime";
 
 function histogram(
   xs: readonly number[],
@@ -17,6 +17,9 @@ function histogram(
 }
 
 /** Bar chart instead of a wall of numbers when this fails. */
-test("Tests > histogram > Visual", async ({ task }) => {
-  await ntCheck(task, { display: "./fixtures/display-histogram.html", meta: undefined, soft: false, condition: ".toEqual([5, 1, 1, 1])" }, async () => Array.from(histogram([1, 1, 1, 2, 3, 5, 8, 13], 4, 0, 16)), [5, 1, 1, 1], (actual) => expect(actual).toEqual([5, 1, 1, 1]));
+test("Tests > histogram > Visual", ({ task }) => {
+  const actual = Array.from(histogram([1, 1, 1, 2, 3, 5, 8, 13], 4, 0, 16));
+  const expected = [5, 1, 1, 1];
+  recordForDisplay(task, "./fixtures/display-histogram.html", { actual, expected });
+  expect(actual).toEqual(expected);
 });

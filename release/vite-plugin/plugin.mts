@@ -64,10 +64,8 @@ export type Options = {
   /** Discover test files by scanning cwd. Default `true`. */
   scan?: boolean;
   /**
-   * Absolute path of the `runtime` module generated code imports `ntCheck`
-   * from. Defaults to this plugin's own sibling when it is running from source
-   * — as it does when vendored — and to the package specifier
-   * `@namespace-tests/vite-plugin/runtime` when installed as a package.
+   * Absolute path of the runtime generated code imports `recordForDisplay` from.
+   * Default: the plugin's own `runtime.mts`, or the package's when installed.
    */
   runtimeFile?: string;
   /**

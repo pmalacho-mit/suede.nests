@@ -147,7 +147,7 @@ describe("assertions", () => {
     ]);
   });
 
-  test("routes through ntCheck when a display page is configured", () => {
+  test("records the values for a display page, then asserts as any test does", () => {
     const { cx, type } = contextFor(`
       const add = (a: number, b: number) => a + b;
       type Subject = Expect<Invoke<typeof add, [4, 5]>, "=", 9, "./page.html">;
@@ -158,11 +158,18 @@ describe("assertions", () => {
       display: { page: "./page.html", meta: null },
     });
     expect(printStatement(statement!)).toEqual([
-      `await ntCheck(task, { display: "./page.html", meta: undefined, soft: false, condition: ".toEqual(9)" }, async () => add(4, 5), 9, (actual) => expect(actual).toEqual(9));`,
+      "const actual = add(4, 5);",
+      "const expected = 9;",
+      'recordForDisplay(task, "./page.html", { actual, expected });',
+      "expect(actual).toEqual(expected);",
     ]);
-    expect(lowerBody(cx, type("Full"), false)[0]).toMatchObject({
+    const [full] = lowerBody(cx, type("Full"), false);
+    expect(full).toMatchObject({
       display: { page: "./page.html", meta: { kind: "object" } },
     });
+    expect(printStatement(full!)).toContain(
+      'recordForDisplay(task, "./page.html", { actual, expected, meta: { bins: 4 } });',
+    );
   });
 
   test("hoists an awaited expected out of a callback", () => {
