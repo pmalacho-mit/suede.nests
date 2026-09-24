@@ -1,5 +1,7 @@
 import ts from "typescript";
 
+import { isDslModule } from "../../workspace.mts";
+
 import type { Expect, Invoke } from "../../dsl.import.meta.vitest.ts";
 
 export const hasTests = (text: string) => text.includes("import.meta.vitest");
@@ -24,12 +26,10 @@ import {} from "../namespace-tests/dsl.import.meta.vitest.ts";
 const createSource = (fileName: string, text: string) =>
   ts.createSourceFile(fileName, text, ts.ScriptTarget.ES2022, true);
 
-const DSL_MODULE = /(^|\/)dsl\.import\.meta\.vitest(\.ts)?$/;
-
 const importsTheDsl = (statement: ts.Statement): statement is ts.ImportDeclaration =>
   ts.isImportDeclaration(statement) &&
   ts.isStringLiteral(statement.moduleSpecifier) &&
-  DSL_MODULE.test(statement.moduleSpecifier.text);
+  isDslModule(statement.moduleSpecifier.text);
 
 function* boundNames(statement: ts.ImportDeclaration): Generator<string> {
   const bindings = statement.importClause?.namedBindings;

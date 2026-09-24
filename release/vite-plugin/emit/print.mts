@@ -1,7 +1,3 @@
-// IR → Vitest source. Nothing here reads a `ts.Node`: an expression prints as
-// the JavaScript it stands for, each DSL condition maps onto a built-in
-// `expect` matcher, and a test case becomes one top-level `test(…)` with every
-// line anchored to the source line it came from.
 import { awaits, children, exprsOf } from "./ir.mts";
 
 import type { Assertion as VitestAssertion } from "vitest";
@@ -27,12 +23,9 @@ const quote = (s: string) => JSON.stringify(s);
 
 const isIdentifier = (name: string) => /^[A-Za-z_$][\w$]*$/.test(name);
 
-/** An object key as JavaScript writes it: bare when it can be, quoted otherwise. */
 const propKey = (name: string) => (isIdentifier(name) ? name : quote(name));
 
-// ── expressions ─────────────────────────────────────────────────────────────
-
-/** Would this print with an `await` or `new` in front, so a member access needs parentheses? */
+// with `await` or `new` in front, a member access needs parentheses
 const needsParens = (e: Expr) =>
   e.kind === "construct" ||
   ((e.kind === "call" || e.kind === "method") && e.awaited);
@@ -88,7 +81,6 @@ export function printExpr(e: Expr): string {
   }
 }
 
-/** `.name`, or `["not an identifier"]`. */
 const member = (key: string) =>
   isIdentifier(key) ? `.${key}` : `[${quote(key)}]`;
 
@@ -194,53 +186,42 @@ declare namespace printExpr {
   >;
 }
 
-// ── conditions ──────────────────────────────────────────────────────────────
-
-/** A matcher on Vitest's `expect(…)`: anything callable, so `not`/`resolves` aside. */
 type Callable = (...args: never[]) => unknown;
 
-/** The name of a real Vitest matcher — a typo cannot get past this. */
+// a typo cannot get past this
 type MatcherName = {
   [K in keyof VitestAssertion & string]-?: VitestAssertion[K] extends Callable
     ? K
     : never;
 }[keyof VitestAssertion & string];
 
-/** Homomorphic, so a tuple of parameters stays a tuple. */
+// homomorphic, so a tuple of parameters stays a tuple
 type Printed<P extends readonly unknown[]> = { [I in keyof P]: string };
 
-/** One printed argument per parameter the matcher declares. */
 type PrintedArgs<K extends MatcherName> = Printed<
   Parameters<Extract<VitestAssertion[K], Callable>>
 >;
 
-/** An `expect` chain: what goes after `expect(subject)`. */
 export type Chain = {
   matcher: string;
   args: string[];
-  /** `.not` before the matcher. */
   negated?: boolean;
-  /** `.rejects` before the matcher: the subject is a thunk that must reject. */
+  // the subject is a thunk that must reject
   rejects?: boolean;
-  /** Assert on this instead of the actual itself (`"~="`, ordering on non-numbers). */
+  // asserted on instead of the actual: `"~="`, ordering on non-numbers
   subject?: string;
 };
 
-/**
- * Build one `expect` chain. `matcher` must name a Vitest matcher and `args`
- * must print one argument per parameter it takes, so the printer cannot emit
- * `.toEqul(…)` or forget an expected value.
- */
+// typed so the printer cannot emit `.toEqul(…)` or forget an expected value
 const chain = <K extends MatcherName>(
   matcher: K,
   args: PrintedArgs<K>,
   rest: Omit<Chain, "matcher" | "args"> = {},
 ): Chain => ({ matcher, args: args as string[], ...rest });
 
-/** The operands of an assertion, already printed. */
 type Operands = { actual: string; expected: string; param: string };
 
-/** An ordering condition: a matcher on numbers, a plain comparison otherwise. */
+// a matcher on numbers, a plain comparison otherwise
 const ordering =
   (
     matcher:
@@ -257,13 +238,12 @@ const ordering =
           subject: `${actual} ${operator} ${expected}`,
         });
 
-/** A predicate over a collection, spelled out because `toSatisfy<E>` does not infer `E`. */
+// spelled out because `toSatisfy<E>` does not infer `E`
 const collection = (method: "some" | "every") => (_: Assertion, p: Operands) =>
   chain("toSatisfy", [
     `(xs: ArrayLike<any>) => Array.from(xs).${method}(${p.expected})`,
   ]);
 
-/** Condition → the chain it compiles to. Exhaustive over the DSL. */
 const matchers: Record<ConditionName, (a: Assertion, p: Operands) => Chain> = {
   "=": (a, p) =>
     a.expected?.kind === "snapshot"
@@ -311,11 +291,9 @@ const matchers: Record<ConditionName, (a: Assertion, p: Operands) => Chain> = {
   isFinite: () => chain("toSatisfy", ["Number.isFinite"]),
 };
 
-/** Does the DSL have a condition of this name? */
 export const isCondition = (op: string): op is ConditionName =>
   Object.hasOwn(matchers, op);
 
-/** `.rejects`, `.not`, the matcher and its arguments, as source text. */
 declare namespace printAssertion {
   type Add = "const add = (a: number, b: number) => a + b;";
 
@@ -421,7 +399,7 @@ declare namespace matchers {
   >;
 }
 
-/** A `"matches"` pattern as a regex: `"/x/i"` is written as one, anything else is a source string. */
+// `"/x/i"` is written as a regex; anything else is its source
 export const regex = (e: Expr) => {
   const m = e.kind === "string" && /^\/(.*)\/([a-z]*)$/.exec(e.value);
   return m ? `/${m[1]}/${m[2]}` : `new RegExp(${printExpr(e)})`;
@@ -448,20 +426,10 @@ declare namespace regex {
   >;
 }
 
-/**
- * Is this `throws` expectation asserted as a *rejected promise* rather than as
- * a function that throws where it stands?
- *
- * An awaited subject has to be, since what it throws arrives as a rejection.
- * So does a `ThrowsMatcher` literal, whatever the subject: it compiles to a
- * predicate over the error, and `.rejects` is the only thing that hands the
- * error to one — `toThrow` takes a class, a message or a pattern, never a
- * predicate.
- */
+// an awaited subject throws by rejecting, and only `.rejects` hands an error to a predicate
 const rejectsFor = (a: Assertion) =>
   awaits(a.actual) || throwsChain(a.expected).matcher !== "toThrow";
 
-/** The matcher for a `throws` expectation: nothing, a class or message, or a `ThrowsMatcher` literal. */
 const throwsChain = (expected: Expr | null): Chain => {
   if (!expected || printExpr(expected) === "undefined")
     return chain("toThrow", []);
@@ -485,14 +453,7 @@ const throwsChain = (expected: Expr | null): Chain => {
   return chain("toSatisfy", [`(err) => ${checks.join(" && ")}`]);
 };
 
-// ── statements ──────────────────────────────────────────────────────────────
-
-/** One assertion, as statements: a hoisted expected value when one is needed, then the `expect`. */
-/**
- * The names a test body has already used, so a local this printer introduces
- * never shadows something the test calls. Seeded with everything the test
- * refers to by name, and with every local handed out so far.
- */
+// seeded with every name the test refers to, so a local never shadows one
 export type Names = { take: (base: string) => string };
 
 export const names = (taken: Iterable<string>): Names => {
@@ -507,7 +468,6 @@ export const names = (taken: Iterable<string>): Names => {
   };
 };
 
-/** Every name a test refers to, so a local never lands on one of them. */
 export const namesIn = (t: TestCase): string[] => {
   const found: string[] = [];
   const walk = (e: Expr): void => {
@@ -523,17 +483,9 @@ export const namesIn = (t: TestCase): string[] => {
   return found;
 };
 
-/**
- * Worth a name of its own? A value that is already a plain name is not —
- * `const actual = Counter$;` says nothing that `Counter$` did not.
- */
+// `const actual = Counter$;` says nothing `Counter$` did not
 const worthBinding = (code: string) => !isIdentifier(code) && code !== "undefined";
 
-/**
- * @param scope Names the test body has already used.
- * @param nth Which assertion of the body this is, when there is more than one:
- *   `actual2` pairs with `expected2`, so a body of several says which is which.
- */
 const printActual = (a: Assertion) => {
   const printed = printExpr(a.actual);
   if (a.condition === "throws")
@@ -592,10 +544,7 @@ const expectation = (a: Assertion, c: Chain, subject: string) => {
   return c.rejects ? `await ${statement}` : statement;
 };
 
-/**
- * @param nth Which assertion of the body this is, when there is more than one:
- *   `actual2` pairs with `expected2`.
- */
+// `actual2` pairs with `expected2`
 export function printAssertion(
   a: Assertion,
   scope = names([]),
@@ -621,10 +570,7 @@ export const printStatement = (
 ): string[] =>
   s.kind === "effect" ? [`${printExpr(s.expr)};`] : printAssertion(s, scope, nth);
 
-/**
- * A whole test body: one scope across it, so two assertions never bind the same
- * name, and ordinals only when there is more than one to tell apart.
- */
+// one scope across the body; ordinals only when there are several to tell apart
 export function printBody(body: Statement[], scope = names([])): string[][] {
   const assertions = body.filter((s) => s.kind === "assert").length;
   let asserted = 0;
@@ -648,9 +594,6 @@ const printBinding = (b: Binding) =>
       `const ${b.name} = ${awaits(b.value) ? "async " : ""}(${b.params.map(printParam).join(", ")}) => ${b.value.kind === "object" ? `(${printExpr(b.value)})` : printExpr(b.value)};`
     : `const ${b.name}${b.annotation ? `: ${b.annotation}` : ""} = ${printExpr(b.value)};`;
 
-// ── tests ───────────────────────────────────────────────────────────────────
-
-/** Helpers the generated module must import or declare for a test to run. */
 export type Needs = {
   /** `readFileSync`, for `FromFile`. */
   fs: boolean;
@@ -664,7 +607,6 @@ export type Needs = {
   imports: Map<string, Set<string>>;
 };
 
-/** What one test needs, read off its IR in one walk. */
 export function needsOf(t: TestCase): Needs {
   const needs: Needs = {
     fs: false,
@@ -687,7 +629,6 @@ export function needsOf(t: TestCase): Needs {
   return needs;
 }
 
-/** The union of what several tests need: what their shared preamble must provide. */
 export function allNeeds(needs: Needs[]): Needs {
   const imports = new Map<string, Set<string>>();
   for (const n of needs)
@@ -702,19 +643,13 @@ export function allNeeds(needs: Needs[]): Needs {
   };
 }
 
-/** One generated test: a top-level `test(…)`, every line anchored to the source. */
 export type EmittedTest = TestCase & {
-  /** The generated lines, each anchored to the line it came from. */
   lines: Line[];
-  /** `lines` joined: the test's source. */
   code: string;
   needs: Needs;
 };
 
-/**
- * Does this statement print an `await`? Either something in it is awaited, or
- * it is a rejection: `.rejects` is awaited however its subject was written.
- */
+// `.rejects` is awaited however its subject was written
 const statementAwaits = (s: Statement) =>
   exprsOf(s).some(awaits) ||
   (s.kind === "assert" && s.condition === "throws" && rejectsFor(s));
@@ -754,7 +689,6 @@ export function printTest(t: TestCase): EmittedTest {
   return { ...t, lines, code: lines.map((l) => l.code).join("\n"), needs };
 }
 
-/** The preamble of a generated module: the Vitest import, plus whatever the tests need. */
 export function headerLines(needs: Needs, runtime: string): string[] {
   const valueImport = (n: string, spec: string) =>
     `import ${n} from ${quote(spec)}; // value import: the original import is type-only`;

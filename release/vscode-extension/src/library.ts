@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { isSearchable } from "../../workspace.mts";
+import { DSL_FILE, isSearchable } from "../../workspace.mts";
 
 export type Library = {
   root: string;
@@ -21,7 +21,7 @@ const libraryAt = (root: string): Library => ({
 
 // wherever the library is installed, the DSL keeps its name and the command line sits beside it
 const isLibrary = (dir: string) =>
-  ["dsl.import.meta.vitest.ts", "cli.mts"].every((file) =>
+  [DSL_FILE, "cli.mts"].every((file) =>
     fs.existsSync(path.join(dir, file)),
   );
 
