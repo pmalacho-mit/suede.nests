@@ -92,11 +92,6 @@ const literal = (node: ts.TypeNode | undefined) =>
     ? node.literal
     : null;
 
-/**
- * The display page a test declares, from the last argument of its `Expect`:
- * either the page itself, or a `Config` that names it. Nested modifiers are
- * looked through, so `Skip<Expect<…, "./page.html">>` still has one.
- */
 const displayIn = (
   type: ts.TypeNode | undefined,
 ): ts.StringLiteral | null => {
@@ -155,6 +150,8 @@ const discoverable = (
     false) &&
   testType(statement.type, dsl);
 
+type Range = { line: number; column: number; length: number };
+
 export type DiscoveredTest = {
   /** What Vitest reports, and what `-t` matches: `Counter > Chainable`. */
   name: string;
@@ -169,14 +166,16 @@ export type DiscoveredTest = {
   length: number;
   /** The whole `export type … = …;` as it was written. */
   source: string;
-  /**
-   * The page this test renders its result on, relative to the file — written as
-   * `Expect<…, "./page.html">` or as `{ display: "./page.html" }`. Read from the
-   * source, so the editor can offer it before anything has run.
-   */
+  /** The display page, as written: relative to this file. */
   display: string | null;
-  /** Where that page is named: the string literal, quotes and all, 0-based. */
-  displayAt: { line: number; column: number; length: number } | null;
+  /** The string literal naming the display page. */
+  displayAt: Range | null;
+};
+
+const rangeOf = (source: ts.SourceFile, node: ts.Node): Range => {
+  const start = node.getStart(source);
+  const { line, character } = source.getLineAndCharacterOfPosition(start);
+  return { line, column: character, length: node.getEnd() - start };
 };
 
 const discovered = (
@@ -184,29 +183,14 @@ const discovered = (
   statement: ts.TypeAliasDeclaration,
   path: string[],
 ): DiscoveredTest => {
-  const { line, character } = source.getLineAndCharacterOfPosition(
-    statement.name.getStart(source),
-  );
   const page = displayIn(statement.type);
-  const at = page
-    ? source.getLineAndCharacterOfPosition(page.getStart(source))
-    : null;
   return {
     path,
-    line,
+    ...rangeOf(source, statement.name),
     name: [...path, statement.name.text].join(" > "),
     alias: statement.name.text,
     display: page?.text ?? null,
-    displayAt:
-      page && at
-        ? {
-            line: at.line,
-            column: at.character,
-            length: page.getEnd() - page.getStart(source),
-          }
-        : null,
-    column: character,
-    length: statement.name.text.length,
+    displayAt: page ? rangeOf(source, page) : null,
     source: statement.getText(source).trim(),
   };
 };

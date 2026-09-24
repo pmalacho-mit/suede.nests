@@ -9,6 +9,7 @@ import picomatch from "picomatch";
 import { encode } from "@jridgewell/sourcemap-codec";
 import { DERIVED, ensureDerived } from "./cache.mts";
 import { SUFFIX, collected, collectorLines, idFor } from "./collector.mts";
+import { SUFFIX as EXTRACTED } from "../extract.mts";
 import { FORK, fork, forkOf } from "./fork.mts";
 import { emittedFor, minimalFor } from "./minimal.mts";
 
@@ -58,15 +59,7 @@ export type Options = {
    * ```
    */
   include?: string[];
-  /**
-   * Glob for *extracted* tests: a generated test written out to a real file, so
-   * it can be run and debugged like any other. They end in `.temp.ts` beside
-   * the module they came from, and this is what makes Vitest collect them —
-   * your own `include` says nothing about them.
-   *
-   * Default `"**\/*.temp.ts"`. Pass `false` to leave them out, and add
-   * `*.temp.ts` to your `.gitignore`: they are scratch files.
-   */
+  /** Glob for extracted tests, added to Vitest's `include`. `false` leaves them out. */
   extracted?: string | false;
   /** Discover test files by scanning cwd. Default `true`. */
   scan?: boolean;
@@ -170,7 +163,7 @@ export default function namespaceTests({
   tsconfig = "tsconfig.json",
   exclude = ["scratch"],
   include = [],
-  extracted = "**/*.temp.ts",
+  extracted = `**/*${EXTRACTED}`,
   scan: doScan = true,
   runtimeFile,
   _scanSelf: scanSelf = false,

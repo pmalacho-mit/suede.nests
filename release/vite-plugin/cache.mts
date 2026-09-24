@@ -46,6 +46,8 @@ export const cacheDir = path.join(DERIVED, "cache", "minimal");
 /** Node's compiled-module cache, kept beside the printer's. */
 export const compileCacheDir = path.join(DERIVED, "cache", "node");
 
+export const caches = [cacheDir, compileCacheDir];
+
 /**
  * Make sure the library's folder exists and keeps itself out of the repository.
  * Every write goes through here.

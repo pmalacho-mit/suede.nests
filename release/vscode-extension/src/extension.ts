@@ -20,8 +20,8 @@ import {
 } from "./discovery.js";
 import { parseWithTypeScriptOf } from "./typescript.js";
 import { findLibrary, forgetLibrary, type Library } from "./library.js";
-import { render } from "./display.js";
-import { SUFFIX, extract, extracted, tempPathFor } from "./extract.js";
+import { pagePath, render } from "./display.js";
+import { SUFFIX, extract, extracted, tempPathFor } from "../../extract.mts";
 import { explain } from "./failure.js";
 
 const ID = "namespace-tests";
@@ -57,10 +57,6 @@ export function activate(context: vscode.ExtensionContext): void {
   compiledModules = path.join(context.globalStorageUri.fsPath, "node");
   const controller = vscode.tests.createTestController(ID, "Namespace Tests");
   const diagnostics = vscode.languages.createDiagnosticCollection(ID);
-  /**
-   * Display pages a test names that are not there. Kept apart from the
-   * printer's diagnostics, which are rewritten wholesale from its own file.
-   */
   const missingPages = vscode.languages.createDiagnosticCollection(
     `${ID}.display`,
   );
@@ -104,30 +100,28 @@ export function activate(context: vscode.ExtensionContext): void {
     return false;
   };
 
-  /**
-   * Mark every display page a file names that is not there, on the string that
-   * names it. A test does not fail for it — the page is only ever looked at in
-   * the editor — so this is the one place it would be noticed.
-   */
-  const checkPages = (uri: vscode.Uri, tests: DiscoveredTest[]) => {
-    const dir = path.dirname(uri.fsPath);
+  const missingPageAt = (
+    { line, column, length }: NonNullable<DiscoveredTest["displayAt"]>,
+    page: string,
+  ) => {
+    const diagnostic = new vscode.Diagnostic(
+      new vscode.Range(line, column, line, column + length),
+      `No display page at ${vscode.workspace.asRelativePath(page)}. It is looked for relative to this file.`,
+      vscode.DiagnosticSeverity.Error,
+    );
+    diagnostic.source = ID;
+    return diagnostic;
+  };
+
+  const checkPages = (uri: vscode.Uri, tests: DiscoveredTest[]) =>
     missingPages.set(
       uri,
-      tests.flatMap((test) => {
-        if (!test.display || !test.displayAt) return [];
-        const page = path.resolve(dir, test.display);
-        if (fs.existsSync(page)) return [];
-        const { line, column, length } = test.displayAt;
-        const diagnostic = new vscode.Diagnostic(
-          new vscode.Range(line, column, line, column + length),
-          `No display page at ${vscode.workspace.asRelativePath(page)}. It is looked for relative to this file.`,
-          vscode.DiagnosticSeverity.Error,
-        );
-        diagnostic.source = ID;
-        return [diagnostic];
+      tests.flatMap(({ display, displayAt }) => {
+        if (!display || !displayAt) return [];
+        const page = pagePath(uri.fsPath, display);
+        return fs.existsSync(page) ? [] : [missingPageAt(displayAt, page)];
       }),
     );
-  };
 
   const load = (uri: vscode.Uri, text?: string) => {
     let source: string;
@@ -475,10 +469,7 @@ export function activate(context: vscode.ExtensionContext): void {
         );
         return;
       }
-      const page = vscode.Uri.joinPath(
-        vscode.Uri.file(path.dirname(item.uri.fsPath)),
-        recorded.display,
-      );
+      const page = vscode.Uri.file(pagePath(item.uri.fsPath, recorded.display));
       if (!fs.existsSync(page.fsPath)) {
         void vscode.window.showErrorMessage(
           `${item.label} names a display page that is not there: ${recorded.display}`,
@@ -733,18 +724,20 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.workspace.onDidChangeWorkspaceFolders(forgetLibrary),
   );
 
-  // A page can go missing — or turn up — without the file that names it
-  // changing at all: moving it is enough. So every open file with tests is
-  // looked at again when a page appears or disappears.
-  const pagesWatcher = vscode.workspace.createFileSystemWatcher("**/*.html");
-  const recheckPages = () => {
+  const reloadOpenFilesWithTests = () => {
     for (const document of vscode.workspace.textDocuments)
       if (document.uri.scheme === "file" && hasTests(document.getText()))
         load(document.uri, document.getText());
   };
-  pagesWatcher.onDidCreate(recheckPages);
-  pagesWatcher.onDidDelete(recheckPages);
-  context.subscriptions.push(pagesWatcher);
+
+  const recheckWhenPagesMove = () => {
+    const watcher = vscode.workspace.createFileSystemWatcher("**/*.html");
+    watcher.onDidCreate(reloadOpenFilesWithTests);
+    watcher.onDidDelete(reloadOpenFilesWithTests);
+    return watcher;
+  };
+
+  context.subscriptions.push(recheckWhenPagesMove());
 
   void controller.resolveHandler(undefined);
   for (const document of vscode.workspace.textDocuments) autoRun(document);

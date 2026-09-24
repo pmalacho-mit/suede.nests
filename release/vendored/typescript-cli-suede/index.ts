@@ -144,19 +144,10 @@ export namespace Result {
 }
 
 export const help = Object.assign(
-  /**
-   * @param width Columns to lay the options out in. Defaults to the terminal's
-   * width, capped for readability, or 80 when output is not a terminal.
-   */
   (description: string, flags: Flag[], width = help.width()) => {
     const scriptName = process.argv[1]?.split("/").pop() ?? "script";
     const rows = [...flags.map(help.flag), help.message()];
-    // the description column: after the widest flag, unless a flag is so wide
-    // it would leave the descriptions no room — that one goes on its own line
-    const column = Math.min(
-      Math.max(...rows.map(([left]) => left.length)),
-      help.layout.column,
-    );
+    const column = help.descriptionColumn(rows);
     return [
       `Usage: ${scriptName} [options] [args...]`,
       "",
@@ -169,78 +160,61 @@ export const help = Object.assign(
   {
     spacing: { shorthand: " ".repeat(3) },
 
-    /**
-     * How the options are laid out: the indent before a flag, the gap before
-     * its description, the widest a flag can be and still share its line, the
-     * widest the whole block gets however wide the terminal is, the least room
-     * a description can have beside its flag, and — when it cannot have that —
-     * how far a description sits under its flag instead. That is deeper than
-     * any flag starts, so a description never reads as another flag.
-     */
     layout: {
       indent: 2,
       gap: 2,
-      column: 32,
+      maxFlagWidth: 32,
       maxWidth: 100,
-      minDescription: 24,
+      minDescriptionWidth: 24,
       stackedIndent: 8,
     },
 
-    /**
-     * The width to lay out in: `COLUMNS` if set — the convention for saying so
-     * when output is not a terminal — else the terminal's, else 80; never
-     * more than `layout.maxWidth`, since long lines are hard to read.
-     */
-    width: () =>
+    columns: () => Number(process.env.COLUMNS) || process.stdout.columns || 80,
+
+    width: () => Math.min(help.columns(), help.layout.maxWidth),
+
+    descriptionColumn: (rows: [string, string][]) =>
       Math.min(
-        Number(process.env.COLUMNS) || process.stdout.columns || 80,
-        help.layout.maxWidth,
+        Math.max(...rows.map(([left]) => left.length)),
+        help.layout.maxFlagWidth,
       ),
 
-    /**
-     * Words, filled into lines no wider than `width`. A word wider than that
-     * gets a line of its own. Only ordinary spaces break a line: a non-breaking
-     * one holds its words together, and is printed as an ordinary space.
-     */
-    wrap: (text: string, width: number): string[] => {
-      const lines: string[] = [];
+    keepTogether: (text: string) => text.replace(/ /g, "\u00a0"),
+
+    printable: (line: string) => line.replace(/\u00a0/g, " "),
+
+    breakableWords: (text: string) => text.split(/[ \t\n]+/).filter(Boolean),
+
+    *fill(words: string[], width: number): Generator<string> {
       let line = "";
-      for (const word of text.split(/[ \t\n]+/).filter(Boolean)) {
+      for (const word of words) {
         if (line && line.length + 1 + word.length > width) {
-          lines.push(line);
+          yield line;
           line = word;
         } else line = line ? `${line} ${word}` : word;
       }
-      if (line) lines.push(line);
-      return lines.map((l) => l.replace(/\u00a0/g, " "));
+      if (line) yield line;
     },
 
-    /**
-     * One option: the flag, then its description wrapped under a hanging
-     * indent, so every line of it starts in the same column. A flag wider than
-     * that column puts its description on the next line instead — and in a
-     * terminal too narrow to leave the descriptions room beside the flags,
-     * every description goes on its own lines, just indented under its flag.
-     */
-    row: (
-      left: string,
-      right: string,
-      column: number,
-      width: number,
-    ): string[] => {
-      const { indent, gap, minDescription, stackedIndent } = help.layout;
-      const flag = `${" ".repeat(indent)}${left}`;
+    wrap: (text: string, width: number) =>
+      [...help.fill(help.breakableWords(text), width)].map(help.printable),
+
+    placement: (left: string, column: number, width: number) => {
+      const { indent, gap, minDescriptionWidth, stackedIndent } = help.layout;
       const beside = indent + column + gap;
-      const stacked = width - beside < minDescription;
-      const start = stacked ? stackedIndent : beside;
-      const hanging = " ".repeat(start);
-      const lines = help.wrap(right, Math.max(width - start, 1));
-      return !stacked && left.length <= column
-        ? [
-            `${flag.padEnd(start)}${lines[0] ?? ""}`.trimEnd(),
-            ...lines.slice(1).map((line) => hanging + line),
-          ]
-        : [flag, ...lines.map((line) => hanging + line)];
+      if (width - beside < minDescriptionWidth)
+        return { start: stackedIndent, below: true };
+      return { start: beside, below: left.length > column };
+    },
+
+    row: (left: string, right: string, column: number, width: number) => {
+      const { start, below } = help.placement(left, column, width);
+      const flag = " ".repeat(help.layout.indent) + left;
+      const indented = (line: string) => " ".repeat(start) + line;
+      const [first = "", ...rest] = help.wrap(right, Math.max(width - start, 1));
+      return below
+        ? [flag, ...[first, ...rest].filter(Boolean).map(indented)]
+        : [`${flag.padEnd(start)}${first}`.trimEnd(), ...rest.map(indented)];
     },
 
     flag: (flag: Flag): [string, string] => {
@@ -254,10 +228,9 @@ export const help = Object.assign(
       if (!left)
         throw new Error(`Unsupported flag type for --${flag.longform}`);
 
-      // a non-breaking space, so a default is never split across two lines
       const defaultSuffix =
         flag.default !== undefined
-          ? ` (default:\u00a0${JSON.stringify(flag.default)})`
+          ? ` ${help.keepTogether(`(default: ${JSON.stringify(flag.default)})`)}`
           : "";
       return [left, `${flag.description}${defaultSuffix}`];
     },

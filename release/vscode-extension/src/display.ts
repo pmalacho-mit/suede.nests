@@ -11,7 +11,20 @@
 // The page's side of the contract: listen for `message` before it has finished
 // loading, and it is handed `namespace-tests:result` once it has. Announcing
 // itself with `namespace-tests:ready` is still understood, but not needed.
+import path from "node:path";
+
 import type { Expect, Invoke } from "../../dsl.import.meta.vitest.ts";
+
+export const pagePath = (testFile: string, page: string) =>
+  path.resolve(path.dirname(testFile), page);
+
+declare namespace pagePath {
+  export type RelativeToTheTest = Expect<
+    Invoke<typeof pagePath, ["/p/src/stats.ts", "./fixtures/chart.html"]>,
+    "=",
+    "/p/src/fixtures/chart.html"
+  >;
+}
 
 /** What a display page is handed, once the run has something to show. */
 export type DisplayResult = {

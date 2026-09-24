@@ -1,32 +1,20 @@
 #!/usr/bin/env node
-// The library's command line: one namespace test, printed as a file.
-//
-//   cli.mts <file> <test>                  the test, as a standalone Vitest file
-//   cli.mts <file> <test> --served         as the plugin serves it, imports tagged
-//   cli.mts <file> --collector             the module Vitest is handed for the file
-//   cli.mts --clean [dir]                  delete extracted tests and the cache
-//
-// It sits beside the DSL rather than in `vite-plugin/` because nothing in the
-// plugin calls it: it is a front end onto the same printer, for the editor and
-// for anyone at a terminal. Anything a run has already printed is answered from
-// the cache without loading TypeScript at all, which is the difference between
-// 40ms and a second.
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import module from "node:module";
 import path from "node:path";
 
 import { cli, main } from "./vendored/typescript-cli-suede/index.ts";
+import { SUFFIX, extracted } from "./extract.mts";
 import {
-  cacheDir,
   cacheKey,
+  caches,
   compileCacheDir,
   ensureDerived,
   read,
   write,
 } from "./vite-plugin/cache.mts";
 
-import type { Expect, Invoke } from "./dsl.import.meta.vitest.ts";
+import type { Expect, Invoke, Table } from "./dsl.import.meta.vitest.ts";
 
 const DESCRIPTION = [
   "Print a namespace test as a standalone Vitest file.",
@@ -146,97 +134,66 @@ declare namespace parse {
   >;
 }
 
-// ── cleaning up ──────────────────────────────────────────────────────────
+const SKIPPED_DIRECTORIES = new Set(["node_modules", "dist", "out", "coverage"]);
 
-/**
- * What an extracted file says about itself. This reads the header the editor
- * writes — `vscode-extension/src/extract.ts` owns the format, and this is a
- * copy, because a CommonJS extension cannot share an ES module with the
- * library. If the two drifted, an extract would only ever look edited, and be
- * kept: the copy can be wrong in the safe direction only.
- */
-const HEADER = /^\/\/ namespace-tests: .+? > "(?:[^"\\]|\\.)*" \[([0-9a-f]+)\]$/;
+const isSearchable = (entry: fs.Dirent) =>
+  !entry.name.startsWith(".") && !SKIPPED_DIRECTORIES.has(entry.name);
 
-const fingerprint = (body: string) =>
-  createHash("sha256")
-    .update(body.replace(/\s*$/, "\n"))
-    .digest("hex")
-    .slice(0, 12);
-
-/**
- * Whether a file is one the editor extracted, and if so whether it is still
- * what was written: `null` for anything else, however it is named.
- */
-export const extractedState = (text: string): "untouched" | "edited" | null => {
-  const lines = text.split("\n");
-  const hash = HEADER.exec(lines[0] ?? "")?.[1];
-  if (!hash) return null;
-  const body = lines.slice(lines.indexOf("") + 1).join("\n");
-  return fingerprint(body) === hash ? "untouched" : "edited";
-};
-
-declare namespace extractedState {
-  /** as the editor wrote it — the fingerprint is the editor's own */
-  type Written = '// namespace-tests: src/a.ts > "a > B" [5496e55103b9]\n// Yours to run, debug and edit. Delete it when you are done.\n\ntest("x", () => {});\n';
-
-  export type Untouched = Expect<Invoke<typeof extractedState, [Written]>, "=", "untouched">;
-
-  /** worked on since, which is why it is kept */
-  export type Edited = Expect<
-    Invoke<typeof extractedState, [Invoke<typeof withBody, [Written, 'test("y", () => {});']>]>,
-    "=",
-    "edited"
-  >;
-
-  /** a file that merely shares the name is not ours to delete */
-  export type Stranger = Expect<
-    Invoke<typeof extractedState, ["// my own scratch file\nconst a = 1;\n"]>,
-    "is",
-    null
-  >;
-}
-
-/** Test support: the same extracted file, with another body. */
-const withBody = (text: string, body: string) =>
-  text.replace(/test\("x", \(\) => \{\}\);/, body);
-
-/** Directories no extract is ever written into. */
-const SKIP = new Set(["node_modules", "dist", "out", "coverage"]);
-
-/** Every `.temp.ts` under `dir`, leaving out hidden folders and dependencies. */
-function temps(dir: string, found: string[] = []): string[] {
+function* extractsUnder(dir: string): Generator<string> {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const at = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (!entry.name.startsWith(".") && !SKIP.has(entry.name)) temps(at, found);
-    } else if (entry.name.endsWith(".temp.ts")) found.push(at);
+    if (entry.isDirectory() && isSearchable(entry)) yield* extractsUnder(at);
+    else if (entry.isFile() && entry.name.endsWith(SUFFIX)) yield at;
   }
-  return found;
 }
 
-/** Delete what the editor extracted under `dir`; keep what has been worked on. */
-function cleanExtracted(dir: string, force: boolean): void {
-  for (const file of temps(dir)) {
-    const shown = path.relative(process.cwd(), file);
-    const state = extractedState(fs.readFileSync(file, "utf8"));
-    if (state === null) continue;
-    if (state === "edited" && !force) {
-      console.log(`kept     ${shown} — edited since it was extracted (--force to delete it too)`);
-      continue;
+type Verdict = "delete" | "keep" | "ignore";
+
+const verdict = (
+  file: { edited: boolean } | null,
+  force: boolean,
+): Verdict => (!file ? "ignore" : file.edited && !force ? "keep" : "delete");
+
+declare namespace verdict {
+  export type Rules = Table<
+    typeof verdict,
+    [
+      [args: [file: null, force: true], expected: "ignore"],
+      [args: [file: { edited: false }, force: false], expected: "delete"],
+      [args: [file: { edited: true }, force: false], expected: "keep"],
+      [args: [file: { edited: true }, force: true], expected: "delete"]
+    ]
+  >;
+}
+
+const shown = (file: string) => path.relative(process.cwd(), file);
+
+const report = {
+  delete: (file: string) => console.log(`deleted  ${shown(file)}`),
+  keep: (file: string) =>
+    console.log(
+      `kept     ${shown(file)} — edited since it was extracted (--force to delete it too)`,
+    ),
+  ignore: () => {},
+  cleared: (dir: string) => console.log(`cleared  ${shown(dir)}`),
+};
+
+const cleanup = {
+  extracted(dir: string, force: boolean) {
+    for (const file of extractsUnder(dir)) {
+      const decided = verdict(extracted(fs.readFileSync(file, "utf8")), force);
+      if (decided === "delete") fs.rmSync(file);
+      report[decided](file);
     }
-    fs.rmSync(file);
-    console.log(`deleted  ${shown}`);
-  }
-}
+  },
 
-/** Delete the library's caches. What the editor reads — results, diagnostics — stays. */
-function cleanCache(): void {
-  for (const dir of [cacheDir, compileCacheDir]) {
-    if (!fs.existsSync(dir)) continue;
-    fs.rmSync(dir, { recursive: true, force: true });
-    console.log(`cleared  ${path.relative(process.cwd(), dir)}`);
-  }
-}
+  cache() {
+    for (const dir of caches.filter((dir) => fs.existsSync(dir))) {
+      fs.rmSync(dir, { recursive: true, force: true });
+      report.cleared(dir);
+    }
+  },
+};
 
 const tryCacheNodeCompilation = () => {
   ensureDerived();
@@ -264,18 +221,16 @@ const tryRetrieveFromCache = ({ file, mode, test, root, runtime }: Parsed) => {
   return { key, hit: read(key) };
 };
 
-if (cli.entry(import.meta.url)) {
-  const parsed = parse(process.argv.slice(2));
-  const { file, test, mode, clean, help } = parsed;
+const cleanUp = ({ file, clean }: Parsed) => {
+  // no compile cache here: Node writes it on exit, and would recreate what was cleared
+  if (clean.extracted) cleanup.extracted(path.resolve(file ?? "."), clean.force);
+  if (clean.cache) cleanup.cache();
+};
 
-  if (clean.extracted || clean.cache) {
-    // Node's compile cache is not switched on here: it is written on exit, and
-    // would put back the very thing just cleared.
-    if (clean.extracted) cleanExtracted(path.resolve(file ?? "."), clean.force);
-    if (clean.cache) cleanCache();
-    process.exit(0);
-  }
+const wantsCleaning = ({ clean }: Parsed) => clean.extracted || clean.cache;
 
+async function print(parsed: Parsed) {
+  const { file, test, mode, help } = parsed;
   tryCacheNodeCompilation();
 
   if (!file || (mode !== "collector" && !test)) {
@@ -301,4 +256,10 @@ if (cli.entry(import.meta.url)) {
 
     process.stdout.write(text);
   }
+}
+
+if (cli.entry(import.meta.url)) {
+  const parsed = parse(process.argv.slice(2));
+  if (wantsCleaning(parsed)) cleanUp(parsed);
+  else await print(parsed);
 }
