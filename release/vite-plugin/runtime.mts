@@ -13,17 +13,23 @@ export type DisplayRecord = {
 // `meta` is Vitest's `TaskMeta`: an empty interface for augmentation, so `object`.
 export type TaskLike = { meta: object };
 
-export const recordedFor = (task: TaskLike) => {
-  const meta = task.meta as { namespaceTests?: DisplayRecord[] };
-  return (meta.namespaceTests ??= []);
-};
+type Recording = { namespaceTests?: DisplayRecord[] };
+
+const recording = (task: TaskLike) => task.meta as Recording;
+
+export const recordedFor = (task: TaskLike) => recording(task).namespaceTests ?? [];
 
 export function recordForDisplay(
   task: TaskLike,
   page: string,
   { actual, expected, meta }: DisplayValues,
 ): void {
-  recordedFor(task).push({ display: page, actual, expected, meta: meta ?? null });
+  (recording(task).namespaceTests ??= []).push({
+    display: page,
+    actual,
+    expected,
+    meta: meta ?? null,
+  });
 }
 
 declare namespace recordForDisplay {

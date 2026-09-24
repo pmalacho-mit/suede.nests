@@ -8,14 +8,11 @@ import { folderOf } from "./editor.js";
 import { findLibrary } from "./library.js";
 import { exec } from "./process.js";
 
+import type { ResultRecord } from "../../vite-plugin/reporter.mts";
+
 export type Assertion = { title: string; status: string; failureMessages?: string[] };
 
-export type Recorded = {
-  display: string;
-  meta: unknown;
-  actual: unknown;
-  expected: unknown;
-};
+export type Recorded = ResultRecord["displays"][number];
 
 export type Detail = {
   message: string;
@@ -29,17 +26,9 @@ export type Report = { assertions: Assertion[]; details: Map<string, Detail> };
 
 export type Shown = Recorded & { passed: boolean; message: string | null };
 
-type ResultRecord = {
-  name: string;
-  file: string;
-  location: { line: number } | null;
-  errors?: { message: string; diff: string | null; stack: string | null }[];
-  displays?: Recorded[];
-};
-
 const detailOf = (record: ResultRecord): Detail | null => {
-  const error = record.errors?.[0];
-  const display = record.displays?.[0] ?? null;
+  const error = record.errors[0];
+  const display = record.displays[0] ?? null;
   if (!error && !display) return null;
   return {
     message: error?.message ?? "",

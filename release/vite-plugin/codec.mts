@@ -1,13 +1,4 @@
-
-// JSON encoding for values that JSON cannot carry. Decoded by the extension
-// (and by display pages, which receive real typed arrays / bigints again).
-//
-// It runs in Node and in a browser: a display page is handed the encoded form
-// and decodes it there, because what reaches a webview is JSON and nothing
-// else. So base64 is done with the platform's own primitives rather than
-// `Buffer`, which only one of those two has.
-
-
+// also decoded in a webview, so it uses only what a browser has: btoa, not Buffer
 import type { Expect, Invoke, Table } from "../dsl.import.meta.vitest.ts";
 
 export type EncodedArray = Encoded[];
@@ -32,32 +23,18 @@ export type TypedArrayName = (typeof TYPED)[number];
 const isTypedName = (tag: string): tag is TypedArrayName =>
   (TYPED as readonly string[]).includes(tag);
 
-/** Bytes to base64, wherever this is running. */
-const toBase64 = (bytes: Uint8Array): string => {
+const binaryOf = (bytes: Uint8Array) => {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return typeof btoa === "function"
-    ? btoa(binary)
-    : // eslint-disable-next-line no-undef
-      (globalThis as { Buffer?: { from(s: string, e: string): { toString(e: string): string } } })
-        .Buffer!.from(binary, "binary")
-        .toString("base64");
+  return binary;
 };
 
-/** And back again. */
-const fromBase64 = (base64: string): Uint8Array => {
-  const binary =
-    typeof atob === "function"
-      ? atob(base64)
-      : (globalThis as { Buffer?: { from(s: string, e: string): { toString(e: string): string } } })
-          .Buffer!.from(base64, "base64")
-          .toString("binary");
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-};
+const toBase64 = (bytes: Uint8Array) => btoa(binaryOf(bytes));
 
-/** Encode any value into JSON-safe data. Cycles become `{ $ref: path }`. */
+const fromBase64 = (base64: string) =>
+  Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+
+// a cycle becomes `{ $ref: path }`
 export function encode(value: unknown, seen: Map<object, string> = new Map(), path = "$"): Encoded {
   if (value === undefined) return { $type: "undefined" };
 
@@ -164,7 +141,7 @@ declare namespace encode {
   >;
 }
 
-/** Inverse of `encode`. Class instances come back as plain objects (`$class` dropped); `$ref`s are left as-is. */
+// a `$ref` is left as it is
 export function decode(value: Encoded): unknown {
   if (value === null || typeof value !== "object") return value;
   if (Array.isArray(value)) return value.map(decode);
