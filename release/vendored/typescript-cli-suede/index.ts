@@ -144,21 +144,104 @@ export namespace Result {
 }
 
 export const help = Object.assign(
-  (description: string, flags: Flag[]) => {
+  /**
+   * @param width Columns to lay the options out in. Defaults to the terminal's
+   * width, capped for readability, or 80 when output is not a terminal.
+   */
+  (description: string, flags: Flag[], width = help.width()) => {
     const scriptName = process.argv[1]?.split("/").pop() ?? "script";
     const rows = [...flags.map(help.flag), help.message()];
-    const pad = Math.max(...rows.map(([left]) => left.length));
+    // the description column: after the widest flag, unless a flag is so wide
+    // it would leave the descriptions no room — that one goes on its own line
+    const column = Math.min(
+      Math.max(...rows.map(([left]) => left.length)),
+      help.layout.column,
+    );
     return [
       `Usage: ${scriptName} [options] [args...]`,
       "",
       description,
       "",
       "Options:",
-      ...rows.map(([left, right]) => `  ${left.padEnd(pad)}  ${right}`),
+      ...rows.flatMap(([left, right]) => help.row(left, right, column, width)),
     ].join("\n");
   },
   {
     spacing: { shorthand: " ".repeat(3) },
+
+    /**
+     * How the options are laid out: the indent before a flag, the gap before
+     * its description, the widest a flag can be and still share its line, the
+     * widest the whole block gets however wide the terminal is, the least room
+     * a description can have beside its flag, and — when it cannot have that —
+     * how far a description sits under its flag instead. That is deeper than
+     * any flag starts, so a description never reads as another flag.
+     */
+    layout: {
+      indent: 2,
+      gap: 2,
+      column: 32,
+      maxWidth: 100,
+      minDescription: 24,
+      stackedIndent: 8,
+    },
+
+    /**
+     * The width to lay out in: `COLUMNS` if set — the convention for saying so
+     * when output is not a terminal — else the terminal's, else 80; never
+     * more than `layout.maxWidth`, since long lines are hard to read.
+     */
+    width: () =>
+      Math.min(
+        Number(process.env.COLUMNS) || process.stdout.columns || 80,
+        help.layout.maxWidth,
+      ),
+
+    /**
+     * Words, filled into lines no wider than `width`. A word wider than that
+     * gets a line of its own. Only ordinary spaces break a line: a non-breaking
+     * one holds its words together, and is printed as an ordinary space.
+     */
+    wrap: (text: string, width: number): string[] => {
+      const lines: string[] = [];
+      let line = "";
+      for (const word of text.split(/[ \t\n]+/).filter(Boolean)) {
+        if (line && line.length + 1 + word.length > width) {
+          lines.push(line);
+          line = word;
+        } else line = line ? `${line} ${word}` : word;
+      }
+      if (line) lines.push(line);
+      return lines.map((l) => l.replace(/\u00a0/g, " "));
+    },
+
+    /**
+     * One option: the flag, then its description wrapped under a hanging
+     * indent, so every line of it starts in the same column. A flag wider than
+     * that column puts its description on the next line instead — and in a
+     * terminal too narrow to leave the descriptions room beside the flags,
+     * every description goes on its own lines, just indented under its flag.
+     */
+    row: (
+      left: string,
+      right: string,
+      column: number,
+      width: number,
+    ): string[] => {
+      const { indent, gap, minDescription, stackedIndent } = help.layout;
+      const flag = `${" ".repeat(indent)}${left}`;
+      const beside = indent + column + gap;
+      const stacked = width - beside < minDescription;
+      const start = stacked ? stackedIndent : beside;
+      const hanging = " ".repeat(start);
+      const lines = help.wrap(right, Math.max(width - start, 1));
+      return !stacked && left.length <= column
+        ? [
+            `${flag.padEnd(start)}${lines[0] ?? ""}`.trimEnd(),
+            ...lines.slice(1).map((line) => hanging + line),
+          ]
+        : [flag, ...lines.map((line) => hanging + line)];
+    },
 
     flag: (flag: Flag): [string, string] => {
       const left =
@@ -171,9 +254,10 @@ export const help = Object.assign(
       if (!left)
         throw new Error(`Unsupported flag type for --${flag.longform}`);
 
+      // a non-breaking space, so a default is never split across two lines
       const defaultSuffix =
         flag.default !== undefined
-          ? ` (default: ${JSON.stringify(flag.default)})`
+          ? ` (default:\u00a0${JSON.stringify(flag.default)})`
           : "";
       return [left, `${flag.description}${defaultSuffix}`];
     },

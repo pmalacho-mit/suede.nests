@@ -31,11 +31,11 @@ import type { Expect, Invoke } from "./dsl.import.meta.vitest.ts";
 const DESCRIPTION = [
   "Print a namespace test as a standalone Vitest file.",
   "",
-  "  cli.mts <file> <test>             the test, as it would be extracted",
-  "  cli.mts <file> <test> --served    as a run serves it, imports tagged per test",
-  "  cli.mts <file> --collector        the module Vitest is handed for the file",
-  "  cli.mts --clean [dir]             delete extracted tests (searched recursively from",
-  "                                    dir, default: the current working directory) and the cache",
+  "  cli.mts <file> <test>            the test, as it would be extracted",
+  "  cli.mts <file> <test> --served   as a run serves it, imports tagged per test",
+  "  cli.mts <file> --collector       the module Vitest is handed for the file",
+  "  cli.mts --clean [dir]            delete the cache, and the extracted tests",
+  "                                   under dir (default: the working directory)",
 ].join("\n");
 
 /**
