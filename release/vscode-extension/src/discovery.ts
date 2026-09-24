@@ -2,7 +2,7 @@ import ts from "typescript";
 
 import { isDslModule } from "../../workspace.mts";
 
-import type { Expect, Invoke } from "../../dsl.import.meta.vitest.ts";
+import type { Call, Expect, Invoke } from "../../dsl.import.meta.vitest.ts";
 
 export const hasTests = (text: string) => text.includes("import.meta.vitest");
 
@@ -31,15 +31,21 @@ const importsTheDsl = (statement: ts.Statement): statement is ts.ImportDeclarati
   ts.isStringLiteral(statement.moduleSpecifier) &&
   isDslModule(statement.moduleSpecifier.text);
 
-function* boundNames(statement: ts.ImportDeclaration): Generator<string> {
+const WHOLE_MODULE = "*";
+
+type Bindings = ReadonlyMap<string, string>;
+
+function* boundNames(statement: ts.ImportDeclaration): Generator<[local: string, dsl: string]> {
   const bindings = statement.importClause?.namedBindings;
   if (!bindings) return;
-  if (ts.isNamespaceImport(bindings)) yield bindings.name.text;
-  else for (const { name } of bindings.elements) yield name.text;
+  if (ts.isNamespaceImport(bindings)) yield [bindings.name.text, WHOLE_MODULE];
+  else
+    for (const { name, propertyName } of bindings.elements)
+      yield [name.text, (propertyName ?? name).text];
 }
 
-const dslBindings = (source: ts.SourceFile): ReadonlySet<string> =>
-  new Set(source.statements.filter(importsTheDsl).flatMap((s) => [...boundNames(s)]));
+const dslBindings = (source: ts.SourceFile): Bindings =>
+  new Map(source.statements.filter(importsTheDsl).flatMap((s) => [...boundNames(s)]));
 
 declare namespace dslBindings {
   /**
@@ -62,12 +68,14 @@ declare namespace renamed {
   type Parsed = Invoke<typeof createSource, ["probe.ts", Spellings]>;
   type Bound = Invoke<typeof dslBindings, [Parsed]>;
 
+  type Lookup<Local extends string> = Call<Bound, "get", [Local]>;
+
   export type BoundIsLimited = [
     Expect<Bound["size"], "=", 2>,
-    Expect<Bound, "includes", "Assert">,
-    Expect<Bound, "includes", "dsl">,
-    Expect<Bound, "excludes", "Borrowed">,
-    Expect<Bound, "excludes", "Expect">,
+    Expect<Lookup<"Assert">, "=", "Expect">,
+    Expect<Lookup<"dsl">, "=", "*">,
+    Expect<Lookup<"Borrowed">, "=", undefined>,
+    Expect<Lookup<"Expect">, "=", undefined>,
   ];
 }
 
@@ -83,31 +91,46 @@ const displayMember = (config: ts.TypeLiteralNode) => {
   return null;
 };
 
-const pageNamedBy = (argument: ts.TypeNode) => {
-  const page = stringLiteral(argument);
-  if (page?.text.endsWith(".html")) return page;
-  return ts.isTypeLiteralNode(argument) ? displayMember(argument) : null;
+const dslNameOf = (name: ts.EntityName, dsl: Bindings): string | null => {
+  if (ts.isIdentifier(name)) {
+    const bound = dsl.get(name.text);
+    return bound && bound !== WHOLE_MODULE ? bound : null;
+  }
+  const qualifiesTheDsl = ts.isIdentifier(name.left) && dsl.get(name.left.text) === WHOLE_MODULE;
+  return qualifiesTheDsl ? name.right.text : null;
 };
 
-const displayIn = (type: ts.TypeNode | undefined): ts.StringLiteral | null => {
+const pageNamedBy = (argument: ts.TypeNode) =>
+  stringLiteral(argument) ??
+  (ts.isTypeLiteralNode(argument) ? displayMember(argument) : null);
+
+// where the printer reads a page, and where it looks for the tests that might name one
+const PAGE_ARGUMENT = new Map([["Expect", 3], ["ExpectGiven", 4]]);
+const TEST_ARGUMENT = new Map([["Given", 1], ["Configure", 1], ["Skip", 0], ["Only", 0]]);
+
+const withoutLabel = (element: ts.TypeNode) =>
+  ts.isNamedTupleMember(element) ? element.type : element;
+
+const displayIn = (
+  type: ts.TypeNode | undefined,
+  dsl: Bindings,
+): ts.StringLiteral | null => {
   if (!type) return null;
   if (ts.isTupleTypeNode(type))
-    return type.elements.map(displayIn).find(Boolean) ?? null;
+    return type.elements.map((e) => displayIn(withoutLabel(e), dsl)).find(Boolean) ?? null;
   if (!ts.isTypeReferenceNode(type)) return null;
-  for (const argument of type.typeArguments ?? []) {
-    const page = pageNamedBy(argument) ?? displayIn(argument);
-    if (page) return page;
-  }
-  return null;
+  const name = dslNameOf(type.typeName, dsl);
+  const argument = (index: number | undefined) =>
+    index === undefined ? undefined : type.typeArguments?.[index];
+  const page = argument(PAGE_ARGUMENT.get(name ?? ""));
+  if (page) return pageNamedBy(page);
+  return displayIn(argument(TEST_ARGUMENT.get(name ?? "")), dsl);
 };
-
-const firstIdentifier = (name: ts.EntityName): string =>
-  ts.isIdentifier(name) ? name.text : firstIdentifier(name.left);
 
 // the printer, not the editor, says whether it can run what the DSL wrote
 const isTestType = (
   type: ts.TypeNode | undefined,
-  dsl: ReadonlySet<string>,
+  dsl: Bindings,
 ): boolean => {
   if (!type) return false;
   if (ts.isTupleTypeNode(type))
@@ -115,7 +138,7 @@ const isTestType = (
       type.elements.length > 0 &&
       type.elements.every((element) => isTestType(element, dsl))
     );
-  return ts.isTypeReferenceNode(type) && dsl.has(firstIdentifier(type.typeName));
+  return ts.isTypeReferenceNode(type) && dslNameOf(type.typeName, dsl) !== null;
 };
 
 const isExported = (statement: ts.Statement) =>
@@ -124,7 +147,7 @@ const isExported = (statement: ts.Statement) =>
 
 const isTest = (
   statement: ts.Statement,
-  dsl: ReadonlySet<string>,
+  dsl: Bindings,
 ): statement is ts.TypeAliasDeclaration =>
   ts.isTypeAliasDeclaration(statement) &&
   isExported(statement) &&
@@ -151,8 +174,9 @@ const discovered = (
   source: ts.SourceFile,
   statement: ts.TypeAliasDeclaration,
   path: string[],
+  dsl: Bindings,
 ): DiscoveredTest => {
-  const page = displayIn(statement.type);
+  const page = displayIn(statement.type, dsl);
   return {
     path,
     ...rangeOf(source, statement.name),
@@ -204,7 +228,7 @@ export function discover(
     .flatMap(({ path, body }) =>
       body.statements
         .filter((statement) => isTest(statement, dsl))
-        .map((statement) => discovered(source, statement, path)),
+        .map((statement) => discovered(source, statement, path, dsl)),
     );
 }
 
@@ -286,6 +310,26 @@ declare namespace histogram {
       { alias: "Configured"; display: "./page.html" },
       { alias: "Skipped"; display: "./skipped.html" },
       { alias: "Plain"; display: null }
+    ]
+  >;
+
+  type Elsewhere = `
+import type { Configure, Expect, Given, Invoke } from "./dsl.import.meta.vitest.ts";
+declare namespace load {
+  export type Argument = Expect<Invoke<typeof load, ["./data.html"]>, "=", 1>;
+  export type Configured = Configure<{ display: "./ignored.html" }, Expect<1, "=", 1>>;
+  export type AfterGiven = Given<Invoke<typeof load, ["./x.html"]>, Expect<1, "=", 1, "./given.html">>;
+}
+`;
+
+  /** a page is only where the printer reads one: an `.html` anywhere else is data */
+  export type OnlyWherePrinted = Expect<
+    Invoke<typeof discover, ["probe.ts", Elsewhere]>,
+    "matches",
+    [
+      { alias: "Argument"; display: null },
+      { alias: "Configured"; display: null },
+      { alias: "AfterGiven"; display: "./given.html" },
     ]
   >;
 }
