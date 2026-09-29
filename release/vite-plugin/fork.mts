@@ -35,8 +35,10 @@ const importsIn = async (code: string): Promise<readonly ImportSpecifier[] | nul
 
 type FirstParty = ImportSpecifier & { n: string };
 
+export const isFirstPartySpecifier = (specifier: string) => specifier.startsWith(".");
+
 const isFirstParty = (specifier: ImportSpecifier): specifier is FirstParty =>
-  !!specifier.n?.startsWith(".");
+  !!specifier.n && isFirstPartySpecifier(specifier.n);
 
 const withTag = (spec: string, tag: string) =>
   `${spec}${spec.includes("?") ? "&" : "?"}${FORK}=${tag}`;

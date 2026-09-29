@@ -26,7 +26,9 @@ import {} from "../namespace-tests/dsl.import.meta.vitest.ts";
 const createSource = (fileName: string, text: string) =>
   ts.createSourceFile(fileName, text, ts.ScriptTarget.ES2022, true);
 
-const importsTheDsl = (statement: ts.Statement): statement is ts.ImportDeclaration =>
+const importsTheDsl = (
+  statement: ts.Statement,
+): statement is ts.ImportDeclaration =>
   ts.isImportDeclaration(statement) &&
   ts.isStringLiteral(statement.moduleSpecifier) &&
   isDslModule(statement.moduleSpecifier.text);
@@ -35,7 +37,9 @@ const WHOLE_MODULE = "*";
 
 type Bindings = ReadonlyMap<string, string>;
 
-function* boundNames(statement: ts.ImportDeclaration): Generator<[local: string, dsl: string]> {
+function* boundNames(
+  statement: ts.ImportDeclaration,
+): Generator<[local: string, dsl: string]> {
   const bindings = statement.importClause?.namedBindings;
   if (!bindings) return;
   if (ts.isNamespaceImport(bindings)) yield [bindings.name.text, WHOLE_MODULE];
@@ -45,14 +49,16 @@ function* boundNames(statement: ts.ImportDeclaration): Generator<[local: string,
 }
 
 const dslBindings = (source: ts.SourceFile): Bindings =>
-  new Map(source.statements.filter(importsTheDsl).flatMap((s) => [...boundNames(s)]));
+  new Map(
+    source.statements.filter(importsTheDsl).flatMap((s) => [...boundNames(s)]),
+  );
 
 declare namespace dslBindings {
   /**
    * The DSL under other names: what counts is where the type came from, not
    * what it is spelled. A local type of the same name is not the DSL's.
    */
-  export type Spellings = `
+  type Spellings = `
 import type { Expect as Assert } from "namespace-tests/dsl.import.meta.vitest";
 import type * as dsl from "./dsl.import.meta.vitest.ts";
 import type { Expect as Borrowed } from "./somewhere-else.ts";
@@ -96,7 +102,8 @@ const dslNameOf = (name: ts.EntityName, dsl: Bindings): string | null => {
     const bound = dsl.get(name.text);
     return bound && bound !== WHOLE_MODULE ? bound : null;
   }
-  const qualifiesTheDsl = ts.isIdentifier(name.left) && dsl.get(name.left.text) === WHOLE_MODULE;
+  const qualifiesTheDsl =
+    ts.isIdentifier(name.left) && dsl.get(name.left.text) === WHOLE_MODULE;
   return qualifiesTheDsl ? name.right.text : null;
 };
 
@@ -105,8 +112,17 @@ const pageNamedBy = (argument: ts.TypeNode) =>
   (ts.isTypeLiteralNode(argument) ? displayMember(argument) : null);
 
 // where the printer reads a page, and where it looks for the tests that might name one
-const PAGE_ARGUMENT = new Map([["Expect", 3], ["ExpectGiven", 4]]);
-const TEST_ARGUMENT = new Map([["Given", 1], ["Configure", 1], ["Skip", 0], ["Only", 0]]);
+const PAGE_ARGUMENT = new Map([
+  ["Expect", 3],
+  ["ExpectGiven", 4],
+]);
+const TEST_ARGUMENT = new Map([
+  ["Given", 1],
+  ["Configure", 1],
+  ["Skip", 0],
+  ["SkipIfNotFound", 1],
+  ["Only", 0],
+]);
 
 const withoutLabel = (element: ts.TypeNode) =>
   ts.isNamedTupleMember(element) ? element.type : element;
@@ -117,7 +133,10 @@ const displayIn = (
 ): ts.StringLiteral | null => {
   if (!type) return null;
   if (ts.isTupleTypeNode(type))
-    return type.elements.map((e) => displayIn(withoutLabel(e), dsl)).find(Boolean) ?? null;
+    return (
+      type.elements.map((e) => displayIn(withoutLabel(e), dsl)).find(Boolean) ??
+      null
+    );
   if (!ts.isTypeReferenceNode(type)) return null;
   const name = dslNameOf(type.typeName, dsl);
   const argument = (index: number | undefined) =>
@@ -128,10 +147,7 @@ const displayIn = (
 };
 
 // the printer, not the editor, says whether it can run what the DSL wrote
-const isTestType = (
-  type: ts.TypeNode | undefined,
-  dsl: Bindings,
-): boolean => {
+const isTestType = (type: ts.TypeNode | undefined, dsl: Bindings): boolean => {
   if (!type) return false;
   if (ts.isTupleTypeNode(type))
     return (
@@ -143,7 +159,9 @@ const isTestType = (
 
 const isExported = (statement: ts.Statement) =>
   ts.canHaveModifiers(statement) &&
-  !!ts.getModifiers(statement)?.some(({ kind }) => kind === ts.SyntaxKind.ExportKeyword);
+  !!ts
+    .getModifiers(statement)
+    ?.some(({ kind }) => kind === ts.SyntaxKind.ExportKeyword);
 
 const isTest = (
   statement: ts.Statement,
@@ -191,17 +209,27 @@ const discovered = (
 type Namespace = { path: string[]; body: ts.ModuleBlock };
 
 // `declare namespace A.B` nests B inside A without a block between them
-const namespaceAt = (node: ts.ModuleDeclaration, outer: string[]): Namespace | null => {
+const namespaceAt = (
+  node: ts.ModuleDeclaration,
+  outer: string[],
+): Namespace | null => {
   const path = [...outer];
   let current: ts.ModuleBody | ts.ModuleDeclaration | undefined = node;
-  while (current && ts.isModuleDeclaration(current) && ts.isIdentifier(current.name)) {
+  while (
+    current &&
+    ts.isModuleDeclaration(current) &&
+    ts.isIdentifier(current.name)
+  ) {
     path.push(current.name.text);
     current = current.body;
   }
   return current && ts.isModuleBlock(current) ? { path, body: current } : null;
 };
 
-function* namespacesIn(node: ts.Node, outer: string[] = []): Generator<Namespace> {
+function* namespacesIn(
+  node: ts.Node,
+  outer: string[] = [],
+): Generator<Namespace> {
   const children: ts.Node[] = [];
   ts.forEachChild(node, (child) => {
     children.push(child);
@@ -297,7 +325,7 @@ declare namespace histogram {
       { alias: "Visual"; displayAt: { line: 3; column: 41; length: 14 } },
       { alias: "Configured"; displayAt: { line: 4; column: 56; length: 13 } },
       { alias: "Skipped"; displayAt: { line: 5; column: 47; length: 16 } },
-      { alias: "Plain"; displayAt: null }
+      { alias: "Plain"; displayAt: null },
     ]
   >;
 
@@ -309,7 +337,7 @@ declare namespace histogram {
       { alias: "Visual"; display: "./chart.html" },
       { alias: "Configured"; display: "./page.html" },
       { alias: "Skipped"; display: "./skipped.html" },
-      { alias: "Plain"; display: null }
+      { alias: "Plain"; display: null },
     ]
   >;
 

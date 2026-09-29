@@ -85,41 +85,41 @@ type Parsed = ReturnType<typeof parse>;
 declare namespace parse {
   /** a file and a test: the test, as it would be extracted */
   export type Test = Expect<
-    Invoke<typeof parse, [["src/a.ts", "a > B"]]>,
+    Invoke<typeof parse, [argv: ["src/a.ts", "a > B"]]>,
     "matches",
     { file: "src/a.ts"; test: "a > B"; mode: "test" }
   >;
 
   export type Served = Expect<
-    Invoke<typeof parse, [["src/a.ts", "a > B", "--served"]]>,
+    Invoke<typeof parse, [argv: ["src/a.ts", "a > B", "--served"]]>,
     "matches",
     { mode: "served" }
   >;
 
   /** the whole file needs no test to be named */
   export type Collector = Expect<
-    Invoke<typeof parse, [["src/a.ts", "--collector"]]>,
+    Invoke<typeof parse, [argv: ["src/a.ts", "--collector"]]>,
     "matches",
     { file: "src/a.ts"; test: undefined; mode: "collector" }
   >;
 
   /** a flag may come first: a boolean takes nothing from what follows it */
   export type FlagFirst = Expect<
-    Invoke<typeof parse, [["--collector", "src/a.ts"]]>,
+    Invoke<typeof parse, [argv: ["--collector", "src/a.ts"]]>,
     "matches",
     { file: "src/a.ts"; mode: "collector" }
   >;
 
   /** `--clean` is both kinds of cleaning, and neither needs a test named */
   export type Clean = Expect<
-    Invoke<typeof parse, [["--clean"]]>,
+    Invoke<typeof parse, [argv: ["--clean"]]>,
     "matches",
     { file: undefined; clean: { extracted: true; cache: true; force: false } }
   >;
 
   /** each kind on its own, and where to look */
   export type CleanOne = Expect<
-    Invoke<typeof parse, [["--clean-extracted", "examples"]]>,
+    Invoke<typeof parse, [argv: ["--clean-extracted", "examples"]]>,
     "matches",
     { file: "examples"; clean: { extracted: true; cache: false } }
   >;
@@ -128,7 +128,7 @@ declare namespace parse {
   export type Runtime = Expect<
     Invoke<
       typeof parse,
-      [["src/a.ts", "a > B", "--runtime", "../vite-plugin/runtime.mts"]]
+      [argv: ["src/a.ts", "a > B", "--runtime", "../vite-plugin/runtime.mts"]]
     >,
     "matches",
     { test: "a > B"; runtime: "../vite-plugin/runtime.mts" }
@@ -145,10 +145,8 @@ function* extractsUnder(dir: string): Generator<string> {
 
 type Verdict = "delete" | "keep" | "ignore";
 
-const verdict = (
-  file: { edited: boolean } | null,
-  force: boolean,
-): Verdict => (!file ? "ignore" : file.edited && !force ? "keep" : "delete");
+const verdict = (file: { edited: boolean } | null, force: boolean): Verdict =>
+  !file ? "ignore" : file.edited && !force ? "keep" : "delete";
 
 declare namespace verdict {
   export type Rules = Table<
@@ -157,7 +155,7 @@ declare namespace verdict {
       [args: [file: null, force: true], expected: "ignore"],
       [args: [file: { edited: false }, force: false], expected: "delete"],
       [args: [file: { edited: true }, force: false], expected: "keep"],
-      [args: [file: { edited: true }, force: true], expected: "delete"]
+      [args: [file: { edited: true }, force: true], expected: "delete"],
     ]
   >;
 }
@@ -219,7 +217,8 @@ const tryRetrieveFromCache = ({ file, mode, test, root, runtime }: Parsed) => {
 
 const cleanUp = ({ file, clean }: Parsed) => {
   // no compile cache here: Node writes it on exit, and would recreate what was cleared
-  if (clean.extracted) cleanup.extracted(path.resolve(file ?? "."), clean.force);
+  if (clean.extracted)
+    cleanup.extracted(path.resolve(file ?? "."), clean.force);
   if (clean.cache) cleanup.cache();
 };
 
@@ -254,8 +253,10 @@ async function print(parsed: Parsed) {
   }
 }
 
-if (cli.entry(import.meta.url)) {
-  const parsed = parse(process.argv.slice(2));
+export async function run(args: string[]) {
+  const parsed = parse(args);
   if (wantsCleaning(parsed)) cleanUp(parsed);
   else await print(parsed);
 }
+
+if (cli.entry(import.meta.url)) await run(process.argv.slice(2));

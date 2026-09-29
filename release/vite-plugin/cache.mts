@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // Imports no TypeScript: the command line answers a cache hit without loading a compiler.
 import fs from "node:fs";
 import path from "node:path";
@@ -6,10 +7,10 @@ import { fileURLToPath } from "node:url";
 
 import type { Table, Invoke } from "../dsl.import.meta.vitest.ts";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
 export const DERIVED =
-  process.env.NAMESPACE_TESTS_DIR ?? path.join(here, "..", ".derived");
+  process.env.NAMESPACE_TESTS_DIR ?? path.join(scriptDir, "..", ".derived");
 
 const printedTestsDir = path.join(DERIVED, "cache", "minimal");
 
@@ -29,8 +30,10 @@ export function ensureDerived(dir = DERIVED): string {
 }
 
 const printerFiles = () => [
-  path.join(here, "minimal.mts"),
-  ...fs.readdirSync(path.join(here, "emit")).map((name) => path.join(here, "emit", name)),
+  path.join(scriptDir, "minimal.mts"),
+  ...fs
+    .readdirSync(path.join(scriptDir, "emit"))
+    .map((name) => path.join(scriptDir, "emit", name)),
 ];
 
 const stampOf = (file: string) => {
@@ -69,7 +72,10 @@ export function read(key: string): string | null {
 
 export function write(key: string, text: string): void {
   memo.set(key, text);
-  fs.writeFileSync(path.join(ensureDerived(printedTestsDir), `${key}.ts`), text);
+  fs.writeFileSync(
+    path.join(ensureDerived(printedTestsDir), `${key}.ts`),
+    text,
+  );
 }
 
 declare namespace cacheKey {

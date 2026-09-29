@@ -319,7 +319,7 @@ export const parse = Object.assign(
 
     let pastSeparator = false;
     for (let i = 0; i < argv.length; i++) {
-      const arg = argv[i];
+      const arg = argv[i]!;
 
       if (arg === "--" && !pastSeparator) {
         pastSeparator = true;
@@ -371,10 +371,10 @@ export const parse = Object.assign(
       return (entry as Extract<FlagEntry, { flag: Flag<boolean> }>).positive;
     },
     raw: (argv: string[], i: number): [string, number] | undefined => {
-      const inline = parse.inline(argv[i]);
+      const inline = parse.inline(argv[i]!);
       if (inline !== undefined) return [inline, i];
-      if (i + 1 < argv.length && !argv[i + 1].startsWith("-"))
-        return [argv[i + 1], i + 1];
+      const next = argv[i + 1];
+      if (next !== undefined && !next.startsWith("-")) return [next, i + 1];
       return undefined;
     },
 

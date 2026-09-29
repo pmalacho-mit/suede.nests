@@ -1,0 +1,17 @@
+{
+  "$schema": "https://typedoc-plugin-markdown.org/schema.json",
+  "entryPoints": ["release/dsl.import.meta.vitest.ts"],
+  "tsconfig": "tsconfig.json",
+  "plugin": ["typedoc-plugin-markdown"],
+  "out": "release/api",
+  "name": "namespace-tests DSL",
+  "readme": "none",
+  "router": "module",
+  "entryFileName": "API.md",
+  "flattenOutputFiles": true,
+  "sort": ["alphabetical"],
+  "hideGroupHeadings": true,
+  "disableSources": true,
+  "hidePageHeader": true,
+  "hideBreadcrumbs": true
+}

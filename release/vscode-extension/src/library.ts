@@ -13,7 +13,7 @@ export type Library = {
 
 const libraryAt = (root: string): Library => ({
   root,
-  cli: path.join(root, "cli.mts"),
+  cli: path.join(root, "cli.mjs"),
   runtime: path.join(root, "vite-plugin", "runtime.mts"),
   reporter: path.join(root, "vite-plugin", "reporter.mts"),
   derived: path.join(root, ".derived"),
@@ -21,7 +21,7 @@ const libraryAt = (root: string): Library => ({
 
 // wherever the library is installed, the DSL keeps its name and the command line sits beside it
 const isLibrary = (dir: string) =>
-  [DSL_FILE, "cli.mts"].every((file) =>
+  [DSL_FILE, "cli.mjs"].every((file) =>
     fs.existsSync(path.join(dir, file)),
   );
 

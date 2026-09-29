@@ -1,22 +1,22 @@
-import type { Expect, Invoke, Table, Skip, Todo } from "../release/dsl.import.meta.vitest.ts";
+import type {
+  Expect,
+  Invoke,
+  Table,
+  Skip,
+  Todo,
+} from "../release/dsl.import.meta.vitest.ts";
 
 /** Turn arbitrary text into a URL-safe slug. */
-export function slugify(input: string, maxLength = 64): string {
-  return input
+export const slugify = (input: string, maxLength = 64) =>
+  input
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, maxLength);
-}
 
-export function truncate(input: string, max: number, ellipsis = "…"): string {
-  if (input.length <= max) return input;
-  return input.slice(0, Math.max(0, max - ellipsis.length)) + ellipsis;
-}
-
-declare namespace Tests.slugify {
+declare namespace slugify {
   /** Punctuation collapses into single dashes. */
   export type Basic = Expect<
     Invoke<typeof slugify, ["Hello, World!"]>,
@@ -75,17 +75,23 @@ declare namespace Tests.slugify {
     Todo<"decide whether emoji should be stripped or transliterated">;
 }
 
-declare namespace Tests.truncate {
+export function truncate(input: string, max: number, ellipsis = "…"): string {
+  if (input.length <= max) return input;
+  return input.slice(0, Math.max(0, max - ellipsis.length)) + ellipsis;
+}
+
+declare namespace truncate {
   export type Short = Expect<Invoke<typeof truncate, ["hi", 10]>, "=", "hi">;
   export type Long = Expect<
     Invoke<typeof truncate, ["hello world", 8]>,
     "=",
     "hello w…"
   >;
+
   export type CustomEllipsis = Expect<
-    Invoke<typeof truncate, ["hello world", 8, "..."]>,
+    Invoke<typeof truncate, ["hello world", 8, ",,,"]>,
     "endsWith",
-    "..."
+    ",,,"
   >;
   export type NeverLonger = Expect<
     Invoke<typeof truncate, ["hello world", 8]>["length"],

@@ -1,0 +1,12 @@
+import { test, expect } from "vitest";
+
+import { exchangeRate } from "./lib/rates.ts";
+
+const inEuros = (dollars: number) => dollars * exchangeRate();
+
+/** each test mocks its own copy of rates.ts, so this one sees the real rate */
+test("inEuros > Unmocked", () => {
+  const actual = inEuros(10);
+  const expected = 9;
+  expect(actual).toEqual(expected);
+});

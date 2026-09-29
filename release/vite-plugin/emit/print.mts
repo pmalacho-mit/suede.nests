@@ -7,12 +7,14 @@ import type {
   Binding,
   ConditionName,
   Expr,
+  ModuleMock,
   Param,
+  Replacement,
   Statement,
   TestCase,
 } from "./ir.mts";
 
-import type { Table } from "../../dsl.import.meta.vitest.ts";
+import type { Table, Expect, Invoke } from "../../dsl.import.meta.vitest.ts";
 import type {
   printAlias,
   printMatcher,
@@ -61,7 +63,7 @@ export function printExpr(e: Expr): string {
         ? `${receiver(e.object)}[${e.key}]!`
         : `${receiver(e.object)}${member(e.key)}`;
     case "file": {
-      const url = `new URL(${printExpr(e.path)}, import.meta.url)`;
+      const url = fileUrl(printExpr(e.path));
       return e.format === "bytes"
         ? `new Uint8Array(readFileSync(${url}))`
         : e.format === "json"
@@ -76,10 +78,15 @@ export function printExpr(e: Expr): string {
       return "undefined"; // only `"="` gives a snapshot a meaning; see `matchers`
     case "paren":
       return `(${printExpr(e.inner)})`;
+    case "mocked":
+      return `vi.mocked(${printExpr(e.inner)})`;
     case "unsupported":
       return `nt_unsupported(${quote(e.source)})`;
   }
 }
+
+// a path relative to the test file, wherever the test runs from
+const fileUrl = (path: string) => `new URL(${path}, import.meta.url)`;
 
 const member = (key: string) =>
   isIdentifier(key) ? `.${key}` : `[${quote(key)}]`;
@@ -299,14 +306,24 @@ declare namespace printAssertion {
 
   /** what is asserted on, and what it is compared against, each get a name */
   export type Locals = Expect<
-    Invoke<typeof printStatements, [`${Add}type Subject = Expect<Invoke<typeof add, [1, 2]>, "=", 3>;`]>,
+    Invoke<
+      typeof printStatements,
+      [`${Add}type Subject = Expect<Invoke<typeof add, [1, 2]>, "=", 3>;`]
+    >,
     "=",
-    ["const actual = add(1, 2);", "const expected = 3;", "expect(actual).toEqual(expected);"]
+    [
+      "const actual = add(1, 2);",
+      "const expected = 3;",
+      "expect(actual).toEqual(expected);",
+    ]
   >;
 
   /** a value that already has a name keeps it: `const actual = add` says nothing */
   export type Named = Expect<
-    Invoke<typeof printStatements, [`${Add}type Subject = Expect<typeof add, "defined">;`]>,
+    Invoke<
+      typeof printStatements,
+      [`${Add}type Subject = Expect<typeof add, "defined">;`]
+    >,
     "=",
     ["expect(add).toBeDefined();"]
   >;
@@ -319,7 +336,7 @@ declare namespace printAssertion {
         `${Add}declare namespace add {
            export type Both = [Expect<Invoke<typeof add, [1, 1]>, "=", 2>, Expect<Invoke<typeof add, [2, 2]>, "=", 4>];
          }`,
-        "Both"
+        "Both",
       ]
     >,
     "includes",
@@ -328,7 +345,10 @@ declare namespace printAssertion {
 
   /** a thunk is not a value to name: `throws` reads as it always has */
   export type Thrown = Expect<
-    Invoke<typeof printStatements, [`${Add}type Subject = Throws<Invoke<typeof add, [1, 1]>>;`]>,
+    Invoke<
+      typeof printStatements,
+      [`${Add}type Subject = Throws<Invoke<typeof add, [1, 1]>>;`]
+    >,
     "=",
     ["expect(() => (add(1, 1))).toThrow();"]
   >;
@@ -484,7 +504,8 @@ export const namesIn = (t: TestCase): string[] => {
 };
 
 // `const actual = Counter$;` says nothing `Counter$` did not
-const worthBinding = (code: string) => !isIdentifier(code) && code !== "undefined";
+const worthBinding = (code: string) =>
+  !isIdentifier(code) && code !== "undefined";
 
 const printActual = (a: Assertion) => {
   const printed = printExpr(a.actual);
@@ -568,7 +589,9 @@ export const printStatement = (
   scope = names([]),
   nth = "",
 ): string[] =>
-  s.kind === "effect" ? [`${printExpr(s.expr)};`] : printAssertion(s, scope, nth);
+  s.kind === "effect"
+    ? [`${printExpr(s.expr)};`]
+    : printAssertion(s, scope, nth);
 
 // one scope across the body; ordinals only when there are several to tell apart
 export function printBody(body: Statement[], scope = names([])): string[][] {
@@ -597,28 +620,39 @@ const printBinding = (b: Binding) =>
 export type Needs = {
   /** `readFileSync`, for `FromFile`. */
   fs: boolean;
+  /** `existsSync`, for `SkipIfNotFound`. */
+  exists: boolean;
   /** `nt_env`, for an `Env` with no default. */
   env: boolean;
   /** `recordForDisplay` and the `{ task }` parameter, for a display page. */
   task: boolean;
   /** `nt_unsupported`, for what could not be materialised. */
   unsupported: boolean;
+  /** `vi`, for a `Mock` or a `Mocked`. */
+  vi: boolean;
   /** Value re-imports of type-only bindings: specifier → `a as a$`… */
   imports: Map<string, Set<string>>;
 };
 
+// a skipped or planned test never runs, so it has nothing to check
+const checksFiles = ({ mode, requires }: TestCase) =>
+  requires.length > 0 && (mode === "test" || mode === "test.only");
+
 export function needsOf(t: TestCase): Needs {
   const needs: Needs = {
     fs: false,
+    exists: checksFiles(t),
     env: false,
     task: t.body.some((s) => s.kind === "assert" && !!s.display),
     unsupported: false,
+    vi: t.mocks.length > 0,
     imports: t.imports,
   };
   const visit = (e: Expr): void => {
     if (e.kind === "file") needs.fs = true;
     else if (e.kind === "env" && !e.fallback) needs.env = true;
     else if (e.kind === "unsupported") needs.unsupported = true;
+    else if (e.kind === "mocked") needs.vi = true;
     children(e).forEach(visit);
   };
   t.bindings.forEach((b) => {
@@ -636,9 +670,11 @@ export function allNeeds(needs: Needs[]): Needs {
       imports.set(spec, new Set([...(imports.get(spec) ?? []), ...names]));
   return {
     fs: needs.some((n) => n.fs),
+    exists: needs.some((n) => n.exists),
     env: needs.some((n) => n.env),
     task: needs.some((n) => n.task),
     unsupported: needs.some((n) => n.unsupported),
+    vi: needs.some((n) => n.vi),
     imports,
   };
 }
@@ -659,19 +695,84 @@ const isAsync = (t: TestCase) =>
   t.bindings.some((b) => !b.params && awaits(b.value)) ||
   t.body.some(statementAwaits);
 
+// a factory is handed importOriginal; a module object is the replacement itself
+const replacementFactory = ({ from, name, factory }: Replacement) => {
+  const replacement = `(await import(${quote(from)}))${member(name)}`;
+  return factory
+    ? `async (importOriginal) => ${replacement}(importOriginal)`
+    : `async () => ${replacement}`;
+};
+
+// `import()` rather than a string, so the plugin gives it the test's own copy of the module
+export const printMock = ({ path, replacement }: ModuleMock) =>
+  `vi.mock(import(${quote(path)})${replacement ? `, ${replacementFactory(replacement)}` : ""});`;
+
+declare namespace printMock {
+  /** a mock with no replacement, one with a module object, and one with a factory */
+  export type Shapes = Table<
+    typeof printMock,
+    [
+      [
+        args: [{ path: "./rates.ts"; replacement: null; line: 0 }],
+        expected: 'vi.mock(import("./rates.ts"));',
+      ],
+      [
+        args: [
+          {
+            path: "./rates.ts";
+            replacement: {
+              from: "./fakes.ts";
+              name: "fakeRates";
+              factory: false;
+            };
+            line: 0;
+          },
+        ],
+        expected: 'vi.mock(import("./rates.ts"), async () => (await import("./fakes.ts")).fakeRates);',
+      ],
+      [
+        args: [
+          {
+            path: "./rates.ts";
+            replacement: { from: "./fakes.ts"; name: "default"; factory: true };
+            line: 0;
+          },
+        ],
+        expected: 'vi.mock(import("./rates.ts"), async (importOriginal) => (await import("./fakes.ts")).default(importOriginal));',
+      ],
+    ]
+  >;
+}
+
+const anyMissing = (paths: string[]) =>
+  paths.map((path) => `!existsSync(${fileUrl(quote(path))})`).join(" || ");
+
+// a test that needs a missing file is skipped, whatever it would otherwise have been
+const testFunction = (t: TestCase) => {
+  if (!checksFiles(t)) return t.mode;
+  return t.mode === "test"
+    ? `test.skipIf(${anyMissing(t.requires)})`
+    : `(${anyMissing(t.requires)} ? test.skip : ${t.mode})`;
+};
+
 export function printTest(t: TestCase): EmittedTest {
   const needs = needsOf(t);
   const scope = names(namesIn(t));
   const doc: Line[] = t.doc
     ? [{ code: `/** ${t.doc.text.replace(/\n/g, " ")} */`, line: t.doc.line }]
     : [];
+  const mocks: Line[] = t.mocks.map((mock) => ({
+    code: printMock(mock),
+    line: mock.line,
+  }));
   const lines: Line[] =
     t.mode === "test.todo"
       ? [...doc, { code: `test.todo(${quote(t.name)});`, line: t.line }]
       : [
+          ...mocks,
           ...doc,
           {
-            code: `${t.mode}(${quote(t.name)}${Object.keys(t.options).length ? `, ${JSON.stringify(t.options)}` : ""}, ${isAsync(t) ? "async " : ""}(${needs.task ? "{ task }" : ""}) => {`,
+            code: `${testFunction(t)}(${quote(t.name)}${Object.keys(t.options).length ? `, ${JSON.stringify(t.options)}` : ""}, ${isAsync(t) ? "async " : ""}(${needs.task ? "{ task }" : ""}) => {`,
             line: t.line,
           },
           ...t.bindings.map((b) => ({
@@ -694,9 +795,10 @@ export function headerLines(needs: Needs, runtime: string): string[] {
     `import ${n} from ${quote(spec)}; // value import: the original import is type-only`;
   const lines = [
     `// ───────── generated by namespace-tests; not part of your build ─────────`,
-    `import { test, expect } from "vitest";`,
+    `import { ${["test", "expect", ...(needs.vi ? ["vi"] : [])].join(", ")} } from "vitest";`,
     needs.task && `import { recordForDisplay } from ${quote(runtime)};`,
-    needs.fs && `import { readFileSync } from "node:fs";`,
+    (needs.exists || needs.fs) &&
+      `import { ${[needs.exists && "existsSync", needs.fs && "readFileSync"].filter(Boolean).join(", ")} } from "node:fs";`,
     ...[...needs.imports].flatMap(([spec, names]) => {
       const namespace = [...names].filter((n) => n.startsWith("* as "));
       const named = [...names].filter((n) => !n.startsWith("* as "));
@@ -711,4 +813,32 @@ export function headerLines(needs: Needs, runtime: string): string[] {
       "const nt_env = (n: string) => { if (process.env[n] === undefined) throw new Error(`namespace-tests: env var ${n} is not set`); return process.env[n]!; };",
   ];
   return lines.filter((l): l is string => typeof l === "string");
+}
+
+declare namespace testFunction {
+  type Suite = `
+    const one = () => 1;
+    declare namespace one {
+      export type Focused = Only<SkipIfNotFound<"./absent.json", Expect<Invoke<typeof one, []>, "=", 1>>>;
+      export type Rows = SkipIfNotFound<"./absent.json", Table<typeof one, [[args: [], expected: 1]]>>;
+      export type Skipped = Skip<SkipIfNotFound<"./absent.json", Expect<Invoke<typeof one, []>, "=", 1>>>;
+    }
+  `;
+
+  /** a test that needs a missing file is skipped, and otherwise keeps its mode */
+  export type OnlyStaysOnly = Expect<
+    Invoke<typeof printAlias, [Suite, "Focused"]>,
+    "includes",
+    '(!existsSync(new URL("./absent.json", import.meta.url)) ? test.skip : test.only)("one > Focused"'
+  >;
+
+  /** every row of a table checks for the file */
+  export type EveryRow = Expect<
+    Invoke<typeof printAlias, [Suite, "Rows"]>,
+    "startsWith",
+    'test.skipIf(!existsSync(new URL("./absent.json", import.meta.url)))("one > Rows[0]"'
+  >;
+
+  /** a test already skipped checks for nothing */
+  export type SkippedChecksNothing = Expect<Invoke<typeof printAlias, [Suite, "Skipped"]>, "startsWith", 'test.skip("one > Skipped"'>;
 }

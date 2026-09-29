@@ -1,0 +1,14 @@
+import { test, expect, vi } from "vitest";
+
+import { exchangeRate } from "./lib/rates.ts";
+
+const inEuros = (dollars: number) => dollars * exchangeRate();
+
+vi.mock(import("./lib/rates.ts"));
+/** every export of rates.ts a vi.fn(), and one of them told what to return */
+test("inEuros > Stubbed", () => {
+  vi.mocked(exchangeRate).mockReturnValue(3);
+  const actual = inEuros(10);
+  const expected = 30;
+  expect(actual).toEqual(expected);
+});

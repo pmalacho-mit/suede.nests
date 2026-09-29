@@ -1,0 +1,13 @@
+import { test, expect, vi } from "vitest";
+
+import { exchangeRate } from "./lib/rates.ts";
+
+const inEuros = (dollars: number) => dollars * exchangeRate();
+
+vi.mock(import("./lib/rates.ts"), async () => (await import("./lib/harness.ts")).fakeRates);
+/** rates.ts replaced by a module object the harness exports */
+test("inEuros > Faked", () => {
+  const actual = inEuros(10);
+  const expected = 20;
+  expect(actual).toEqual(expected);
+});

@@ -185,7 +185,7 @@ function* declaredNames(block: ts.SourceFile | ts.ModuleBlock): Generator<string
 
 // only a name the file declares can reach a statement worth keeping
 const namesDeclaredIn = (sf: ts.SourceFile) =>
-  new Set([sf, ...namespaces(sf).map(({ body }) => body)].flatMap((block) => [...declaredNames(block)]));
+  new Set([sf, ...[...namespaces(sf)].map(({ body }) => body)].flatMap((block) => [...declaredNames(block)]));
 
 const statementOf = (sf: ts.SourceFile, node: ts.Node): ts.Statement | undefined => {
   let current: ts.Node = node;

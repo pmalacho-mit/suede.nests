@@ -1,7 +1,7 @@
 import ts from "typescript";
 import { isDslModule } from "../../workspace.mts";
 
-import type { Binding, Expr } from "./ir.mts";
+import type { Binding, Expr, ModuleMock } from "./ir.mts";
 
 export const RUNTIME_MODULE = "@namespace-tests/vite-plugin/runtime";
 
@@ -21,12 +21,14 @@ export type TestState = {
   order: Binding[];
   // specifier → value imports to inject: `a as a$`, `default as d$`, `* as ns$`
   imports: Map<string, Set<string>>;
+  mocks: ModuleMock[];
 };
 
 const freshTestState = (): TestState => ({
   bindings: new Map(),
   order: [],
   imports: new Map(),
+  mocks: [],
 });
 
 export type EmitContext = ReturnType<typeof createEmitContext>;
@@ -90,16 +92,12 @@ export const createEmitContext = (
         ? target.getName()
         : null;
     },
+    warn(node: ts.Node, message: string) {
+      const { line, character } = source.getLineAndCharacterOfPosition(node.getStart());
+      warnings.push({ line, column: character, length: node.getWidth(), message });
+    },
     unsupported(node: ts.Node, why = "is a type, not a value"): Expr {
-      const { line, character } = source.getLineAndCharacterOfPosition(
-        node.getStart(),
-      );
-      warnings.push({
-        line,
-        column: character,
-        length: node.getWidth(),
-        message: `\`${node.getText()}\` ${why}`,
-      });
+      cx.warn(node, `\`${node.getText()}\` ${why}`);
       return { kind: "unsupported", source: node.getText() };
     },
     // a type-only import has no value at run time, so it is imported again under a new name

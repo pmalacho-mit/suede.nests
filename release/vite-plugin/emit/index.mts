@@ -1,4 +1,5 @@
 import { createEmitContext } from "./context.mts";
+import { explainedMistakes } from "./explain.mts";
 import {
   isExportedTypeAlias,
   isTest,
@@ -7,6 +8,7 @@ import {
 } from "./model.mts";
 import { allNeeds, headerLines, printTest } from "./print.mts";
 
+import type ts from "typescript";
 import type { EmitInput, Line, Warning } from "./context.mts";
 import type { EmittedTest } from "./print.mts";
 
@@ -52,17 +54,20 @@ export function emitTests(
 ): Emitted {
   const cx = createEmitContext(program, source, runtime);
   const tests: EmittedTest[] = [];
+  const aliases: ts.TypeAliasDeclaration[] = [];
   for (const { segs, body } of namespaces(source)) {
     if (root && segs[0] !== root) continue;
     for (const stmt of body.statements)
-      if (isExportedTypeAlias(stmt) && isTest(cx, stmt.type))
+      if (isExportedTypeAlias(stmt) && isTest(cx, stmt.type)) {
+        aliases.push(stmt);
         tests.push(...lowerAlias(cx, stmt, segs).map(printTest));
+      }
   }
   // written last: only once every test has said what it needs
   const header = tests.length
     ? headerLines(allNeeds(tests.map((t) => t.needs)), cx.runtime)
     : [];
-  return { header, tests, warnings: cx.warnings };
+  return { header, tests, warnings: [...cx.warnings, ...explainedMistakes(cx, aliases)] };
 }
 
 declare namespace emitTests {

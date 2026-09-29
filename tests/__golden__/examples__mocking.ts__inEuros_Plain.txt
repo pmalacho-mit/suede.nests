@@ -1,0 +1,11 @@
+import { test, expect } from "vitest";
+
+import { exchangeRate } from "./lib/rates.ts";
+
+const inEuros = (dollars: number) => dollars * exchangeRate();
+
+test("inEuros > Plain", () => {
+  const actual = inEuros(10);
+  const expected = 9;
+  expect(actual).toEqual(expected);
+});

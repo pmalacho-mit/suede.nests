@@ -1,0 +1,18 @@
+import { test, expect } from "vitest";
+
+/** Turn arbitrary text into a URL-safe slug. */
+const slugify = (input: string, maxLength = 64) =>
+  input
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, maxLength);
+
+/** Diacritics are stripped rather than dropped. */
+test("slugify > Diacritics", () => {
+  const actual = slugify("Crème Brûlée");
+  const expected = "creme-brulee";
+  expect(actual).toEqual(expected);
+});

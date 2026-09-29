@@ -1,0 +1,13 @@
+import { test, expect, vi } from "vitest";
+
+import { exchangeRate } from "./lib/rates.ts";
+
+const inEuros = (dollars: number) => dollars * exchangeRate();
+
+vi.mock(import("node:os"));
+/** a package is shared by every test in this file, so the printer warns that its mock is too */
+test.skip("inEuros > APackage", () => {
+  const actual = inEuros(10);
+  const expected = 9;
+  expect(actual).toEqual(expected);
+});

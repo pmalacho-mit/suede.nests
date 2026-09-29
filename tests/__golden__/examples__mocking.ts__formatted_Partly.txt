@@ -1,0 +1,15 @@
+import { test, expect, vi } from "vitest";
+
+import { exchangeRate, symbol } from "./lib/rates.ts";
+
+const inEuros = (dollars: number) => dollars * exchangeRate();
+
+const formatted = (dollars: number) => `${symbol()}${inEuros(dollars)}`;
+
+vi.mock(import("./lib/rates.ts"), async (importOriginal) => (await import("./lib/harness.ts")).keepingTheRest(importOriginal));
+/** a factory is handed importOriginal: the real symbol stays, the rate is replaced */
+test("formatted > Partly", () => {
+  const actual = formatted(10);
+  const expected = "€40";
+  expect(actual).toEqual(expected);
+});

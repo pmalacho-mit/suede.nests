@@ -1,13 +1,4 @@
-import type {
-  ApproxCondition,
-  ArrayCondition,
-  FileFormat,
-  NumberCondition,
-  ObjectCondition,
-  OrderingCondition,
-  StringCondition,
-  UniversalCondition,
-} from "../../dsl.import.meta.vitest.ts";
+import type { Internal } from "../../dsl.import.meta.vitest.ts";
 
 export type Expr =
   // by value: the printer quotes it
@@ -29,24 +20,25 @@ export type Expr =
       awaited: boolean;
     }
   | { kind: "index"; object: Expr; key: string | number }
-  | { kind: "file"; path: Expr; format: FileFormat }
+  | { kind: "file"; path: Expr; format: Internal.FileFormat }
   // a `null` fallback means the variable must be set
   | { kind: "env"; name: string; fallback: Expr | null }
   // only meaningful as the expected value of `"="`
   | { kind: "snapshot"; name: Expr | null }
   // kept so the printed code reads as the type did
   | { kind: "paren"; inner: Expr }
+  | { kind: "mocked"; inner: Expr }
   // prints a call that fails at run time
   | { kind: "unsupported"; source: string };
 
 export type ConditionName =
-  | UniversalCondition
-  | OrderingCondition
-  | StringCondition
-  | ArrayCondition
-  | ObjectCondition
-  | NumberCondition
-  | ApproxCondition[0];
+  | Internal.UniversalCondition
+  | Internal.OrderingCondition
+  | Internal.StringCondition
+  | Internal.ArrayCondition
+  | Internal.ObjectCondition
+  | Internal.NumberCondition
+  | Internal.ApproxCondition[0];
 
 // what the checker knows of an actual that changes the matcher printed
 export type Shape = "number" | "string" | "typedArray" | "other";
@@ -89,6 +81,11 @@ export type Binding = {
 
 export type TestOptions = { timeout?: number; retry?: number };
 
+// imported from another module: `vi.mock` runs before the test module's own code
+export type Replacement = { from: string; name: string; factory: boolean };
+
+export type ModuleMock = { path: string; replacement: Replacement | null; line: number };
+
 export type TestCase = {
   name: string;
   path: string[];
@@ -98,11 +95,14 @@ export type TestCase = {
   // anchored to the alias, even for a table row
   doc: { text: string; line: number } | null;
   mode: "test" | "test.skip" | "test.only" | "test.todo";
+  // files the test needs, relative to it: when one is missing, the test is skipped
+  requires: string[];
   options: TestOptions;
   bindings: Binding[];
   body: Statement[];
   // value re-imports of type-only bindings: specifier → `a as a$`…
   imports: Map<string, Set<string>>;
+  mocks: ModuleMock[];
 };
 
 export const children = (e: Expr): Expr[] => {
@@ -125,6 +125,7 @@ export const children = (e: Expr): Expr[] => {
     case "snapshot":
       return e.name ? [e.name] : [];
     case "paren":
+    case "mocked":
       return [e.inner];
     default:
       return [];

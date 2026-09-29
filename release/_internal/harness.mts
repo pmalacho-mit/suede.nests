@@ -70,6 +70,9 @@ export const DSL_IMPORT = importFromDsl(
   "Only",
   "Todo",
   "Configure",
+  "Mock",
+  "Mocked",
+  "SkipIfNotFound",
 );
 
 /**

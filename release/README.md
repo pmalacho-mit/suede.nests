@@ -1,27 +1,29 @@
 > [!NOTE]
 > This is a [suede](https://github.com/pmalacho-mit/suede) dependency.
 
-## Importing the DSL — the path matters
+## Importing the DSL (_the path matters_)
 
-Import the DSL from the file whose name contains `import.meta.vitest`, and use
-that path in **every** file you write tests in:
+Import the DSL from [dsl.import.meta.vitest.ts](./dsl.import.meta.vitest.ts) and use
+that path / import in **every** file you write tests in:
 
 ```ts
 // vendored beside your code
 import type {
   Expect,
   Invoke,
-} from "./namespace-testing/dsl.import.meta.vitest.ts";
+} from "./<path-to-library>/dsl.import.meta.vitest.ts";
 
 // or installed from npm
 import type { Expect, Invoke } from "namespace-tests/dsl.import.meta.vitest";
 ```
 
-That filename is load-bearing, not a joke. Vitest decides which files hold tests
-by globbing `includeSource` and keeping the ones whose **raw text** contains the
-string `import.meta.vitest` — the check really is a substring match on the bytes
-it reads from disk, before any plugin runs. Importing the DSL by this path is
-what puts that string in your file, and so is what makes your tests findable.
+That module is named explicitly so that, when you import it, the
+string `import.meta.vitest` will appear in your file.
+
+By including `import.meta.vitest` somewhere in our file, we make use of
+vitest's [in-source testing](https://vitest.dev/guide/in-source.html) functionality.
+
+In this way, this library is just a way to accomplish [in-source testing](https://vitest.dev/guide/in-source.html) in a way that gurantees won't make it into transpiled code. 
 
 Two consequences worth knowing:
 
@@ -212,7 +214,7 @@ The name is the point: nothing in it is authored. Every file is derived from
 your source, by this library, for this library — so none of it is yours to read
 or edit, and deleting any of it costs nothing but the time to write it again.
 The two JSON files are how the editor learns what happened; `cache/` is what
-makes it fast. Printed tests are keyed by the source they came from *and* by the
+makes it fast. Printed tests are keyed by the source they came from _and_ by the
 version of the printer, so a changed printer never hands back stale work; Node's
 cache holds the compiled form of the modules a command loads, which is what
 keeps extracting a test at around 20ms rather than 250ms.

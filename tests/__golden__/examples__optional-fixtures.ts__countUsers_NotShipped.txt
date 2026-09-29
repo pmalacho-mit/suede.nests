@@ -1,0 +1,11 @@
+import { test, expect } from "vitest";
+import { existsSync, readFileSync } from "node:fs";
+
+const countUsers = (users: unknown[]) => users.length;
+
+/** a fixture that is not here, as in an installed copy of a library: the test is skipped */
+test.skipIf(!existsSync(new URL("./fixtures/archive.json", import.meta.url)))("countUsers > NotShipped", () => {
+  const actual = countUsers(JSON.parse(readFileSync(new URL("./fixtures/archive.json", import.meta.url), "utf8")));
+  const expected = 0;
+  expect(actual).toBeGreaterThan(expected);
+});

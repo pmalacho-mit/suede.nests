@@ -1,0 +1,17 @@
+import { test, expect } from "vitest";
+
+/** Turn arbitrary text into a URL-safe slug. */
+const slugify = (input: string, maxLength = 64) =>
+  input
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, maxLength);
+
+test("slugify > Ordering", () => {
+  const actual = slugify("b");
+  const expected = "a";
+  expect(actual > expected).toBe(true);
+});

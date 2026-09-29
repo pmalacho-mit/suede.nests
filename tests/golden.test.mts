@@ -22,6 +22,8 @@ const files = [
   "examples/stats.ts",
   "examples/cart.ts",
   "examples/tokens.ts",
+  "examples/mocking.ts",
+  "examples/optional-fixtures.ts",
   "scratch/failing.ts",
 ];
 

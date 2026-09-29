@@ -1,5 +1,6 @@
 import ts from "typescript";
 
+import { isFirstPartySpecifier } from "../fork.mts";
 import { awaits } from "./ir.mts";
 import { isCondition } from "./print.mts";
 
@@ -8,6 +9,7 @@ import type {
   Assertion,
   Binding,
   Expr,
+  Replacement,
   Shape,
   Statement,
   TestCase,
@@ -24,6 +26,8 @@ const unwrap = (e: ts.TypeNode): ts.TypeNode =>
 const elements = (tuple: ts.TupleTypeNode) => tuple.elements.map(unwrap);
 
 export function lowerExpr(cx: EmitContext, node: ts.TypeNode): Expr {
+  if (ts.isImportTypeNode(node))
+    return cx.unsupported(node, "is a module's type, and a module is not a value a test can use");
   if (ts.isParenthesizedTypeNode(node))
     return { kind: "paren", inner: lowerExpr(cx, node.type) };
   if (ts.isLiteralTypeNode(node)) {
@@ -282,6 +286,8 @@ function lowerIntrinsic(
       return a0 && a1
         ? { kind: "construct", callee: callee(cx, a0), args: args(cx, a1) }
         : arity(cx, node, 2);
+    case "Mocked":
+      return a0 ? { kind: "mocked", inner: lowerExpr(cx, a0) } : arity(cx, node, 1);
     case "Call": {
       if (!a0 || !a1 || !a2) return arity(cx, node, 3);
       const method = literalText(cx, a1);
@@ -543,6 +549,65 @@ export function assertion(
   };
 }
 
+const isMock = (cx: EmitContext, node: ts.TypeNode): node is ts.TypeReferenceNode =>
+  ts.isTypeReferenceNode(node) && cx.dslName(node) === "Mock";
+
+const stringIn = (node: ts.TypeNode | undefined) =>
+  node && ts.isLiteralTypeNode(node) && ts.isStringLiteral(node.literal) ? node.literal.text : null;
+
+const resolves = (cx: EmitContext, path: string) =>
+  !!ts.resolveModuleName(path, cx.source.fileName, cx.program.getCompilerOptions(), ts.sys).resolvedModule;
+
+const MOCK_WARNINGS = {
+  shared: (path: string) =>
+    `\`${path}\` is a package, which every test in this file shares, so its mock applies to all of them`,
+  unresolved: (path: string) => `\`${path}\` does not resolve from this file, so nothing would be mocked`,
+};
+
+const NOT_IMPORTED =
+  "is not imported: vi.mock runs before this module's own code, so a replacement has to come from another module";
+
+function warnAboutPath(cx: EmitContext, node: ts.TypeNode, path: string) {
+  if (!isFirstPartySpecifier(path)) cx.warn(node, MOCK_WARNINGS.shared(path));
+  else if (!resolves(cx, path)) cx.warn(node, MOCK_WARNINGS.unresolved(path));
+}
+
+// where a binding was imported from, and under what name that module exports it
+function importOf(cx: EmitContext, identifier: ts.Identifier) {
+  const declaration = cx.checker.getSymbolAtLocation(identifier)?.declarations?.[0];
+  const statement = declaration && ts.findAncestor(declaration, ts.isImportDeclaration);
+  if (!declaration || !statement || !ts.isStringLiteral(statement.moduleSpecifier)) return null;
+  const name = ts.isImportSpecifier(declaration)
+    ? (declaration.propertyName ?? declaration.name).text
+    : ts.isImportClause(declaration)
+      ? "default"
+      : null;
+  return name ? { from: statement.moduleSpecifier.text, name } : null;
+}
+
+// a function is a factory, handed `importOriginal`; anything else is the module itself
+function replacementOf(cx: EmitContext, node: ts.TypeNode): Replacement | Expr {
+  const name = ts.isTypeQueryNode(node) && ts.isIdentifier(node.exprName) ? node.exprName : null;
+  const imported = name && importOf(cx, name);
+  if (!name || !imported) return cx.unsupported(node, NOT_IMPORTED);
+  return { ...imported, factory: cx.checker.getTypeAtLocation(name).getCallSignatures().length > 0 };
+}
+
+const isReplacement = (value: Replacement | Expr): value is Replacement => !("kind" in value);
+
+// a mock is not a statement of the test: it is printed where vi.mock can take effect
+function registerMock(cx: EmitContext, node: ts.TypeReferenceNode): Statement[] {
+  const [pathNode, withNode] = node.typeArguments ?? [];
+  const path = stringIn(pathNode);
+  if (!pathNode || path === null)
+    return [effect(cx.unsupported(node, "needs the path of the module it replaces"), cx.lineOf(node))];
+  warnAboutPath(cx, pathNode, path);
+  const replacement = withNode ? replacementOf(cx, withNode) : null;
+  if (replacement && !isReplacement(replacement)) return [effect(replacement, cx.lineOf(node))];
+  cx.test.mocks.push({ path, replacement, line: cx.lineOf(node) });
+  return [];
+}
+
 export function lowerBody(
   cx: EmitContext,
   node: ts.TypeNode,
@@ -567,8 +632,8 @@ export function lowerBody(
     case "Given":
     case "ExpectGiven": {
       if (!a0 || !a1) return notATest();
-      const effects = (ts.isTupleTypeNode(a0) ? elements(a0) : [a0]).map((e) =>
-        effect(lowerExpr(cx, e), cx.lineOf(e)),
+      const effects = (ts.isTupleTypeNode(a0) ? elements(a0) : [a0]).flatMap((e) =>
+        isMock(cx, e) ? registerMock(cx, e) : [effect(lowerExpr(cx, e), cx.lineOf(e))],
       );
       const then =
         dsl === "Given"
@@ -776,6 +841,7 @@ declare namespace isTest {
 type Peeled = {
   mode: TestCase["mode"];
   options: TestOptions;
+  requires: string[];
   node: ts.TypeNode | null;
 };
 
@@ -783,6 +849,7 @@ export function peelModifiers(cx: EmitContext, type: ts.TypeNode): Peeled {
   let node: ts.TypeNode | null = type;
   let mode: TestCase["mode"] = "test";
   const options: TestOptions = {};
+  const requires: string[] = [];
   while (node && ts.isTypeReferenceNode(node)) {
     const dsl = cx.dslName(node);
     const m0: ts.TypeNode | undefined = node.typeArguments?.[0];
@@ -790,6 +857,12 @@ export function peelModifiers(cx: EmitContext, type: ts.TypeNode): Peeled {
     if (dsl === "Skip" && m0) [mode, node] = ["test.skip", m0];
     else if (dsl === "Only" && m0) [mode, node] = ["test.only", m0];
     else if (dsl === "Todo") [mode, node] = ["test.todo", null];
+    else if (dsl === "SkipIfNotFound" && m0 && m1) {
+      const path = stringIn(m0);
+      if (path === null) cx.warn(m0, "`SkipIfNotFound` needs the path as a string, relative to the test file");
+      else requires.push(path);
+      node = m1;
+    }
     else if (dsl === "Configure" && m0 && m1) {
       if (ts.isTypeLiteralNode(m0))
         for (const m of m0.members) {
@@ -802,7 +875,7 @@ export function peelModifiers(cx: EmitContext, type: ts.TypeNode): Peeled {
       node = m1;
     } else break;
   }
-  return { mode, options, node };
+  return { mode, options, requires, node };
 }
 
 export function docTextOf(decl: ts.TypeAliasDeclaration): string | null {
@@ -827,7 +900,7 @@ function returnTypeOf(cx: EmitContext, fnNode: ts.TypeNode): ts.Type {
 function tableCases(
   cx: EmitContext,
   node: ts.TypeReferenceNode,
-  meta: Omit<TestCase, "bindings" | "body" | "imports">,
+  meta: Omit<TestCase, "bindings" | "body" | "imports" | "mocks">,
 ): TestCase[] {
   const [fnNode, rowsNode] = node.typeArguments ?? [];
   const failing = (at: ts.Node, why: string, row = meta): TestCase => ({
@@ -835,6 +908,7 @@ function tableCases(
     mode: "test",
     bindings: [],
     imports: new Map(),
+    mocks: [],
     body: [effect(cx.unsupported(at, why), cx.lineOf(at))],
   });
   if (!fnNode || !rowsNode || !ts.isTupleTypeNode(rowsNode))
@@ -869,6 +943,7 @@ function tableCases(
       ...rowMeta,
       bindings: cx.test.order,
       imports: cx.test.imports,
+      mocks: cx.test.mocks,
       body,
     };
   });
@@ -882,7 +957,7 @@ export function lowerAlias(
   cx.resetTest();
   const alias = decl.name.text;
   const line = cx.lineOf(decl);
-  const { mode, options, node } = peelModifiers(cx, decl.type);
+  const { mode, options, requires, node } = peelModifiers(cx, decl.type);
   const text = docTextOf(decl);
   const meta = {
     name: testName(path, alias),
@@ -893,12 +968,13 @@ export function lowerAlias(
     doc: text === null ? null : { text, line },
     mode,
     options,
+    requires,
   };
-  if (!node) return [{ ...meta, bindings: [], imports: new Map(), body: [] }];
+  if (!node) return [{ ...meta, bindings: [], imports: new Map(), mocks: [], body: [] }];
   if (ts.isTypeReferenceNode(node) && cx.dslName(node) === "Table")
     return tableCases(cx, node, meta);
   const body = lowerBody(cx, node, false);
-  return [{ ...meta, bindings: cx.test.order, imports: cx.test.imports, body }];
+  return [{ ...meta, bindings: cx.test.order, imports: cx.test.imports, mocks: cx.test.mocks, body }];
 }
 
 // `declare namespace A.B {}` is `["A", "B"]`; only statements can hold a namespace

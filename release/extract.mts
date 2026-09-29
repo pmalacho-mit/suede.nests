@@ -9,6 +9,23 @@ export const SUFFIX = ".temp.ts";
 export const tempPathFor = (source: string, testName: string) =>
   perTestFile(source, testName, SUFFIX);
 
+declare namespace tempPathFor {
+  /** beside the module, named for the module and the test */
+  export type Names = Table<
+    typeof tempPathFor,
+    [
+      [
+        args: [source: "src/counter.ts", test: "Counter > Chainable"],
+        expected: "src/counter.Counter_Chainable.temp.ts",
+      ],
+      [
+        args: [source: "src/codec.mts", test: "encode > Tagged[1]"],
+        expected: "src/codec.encode_Tagged[1].temp.ts",
+      ],
+    ]
+  >;
+}
+
 const withOneTrailingNewline = (body: string) => body.replace(/\s*$/, "\n");
 
 const fingerprint = (body: string) =>
@@ -23,7 +40,7 @@ const hasSeveralTests = (body: string) =>
 const importsFirstParty = (body: string) => /^import .*from ["']\./m.test(body);
 
 const SHARED_IMPORTS_NOTE =
-  "// These tests share what they import; a run gives each its own copy.";
+  "// These tests share module state here (unlike when run as typescript-namespace-tests, where each gets its own copy of every local module).";
 
 // The header is written by `headerLines` and read by `HEADER`: keep them together.
 const MARK = "namespace-tests:";
@@ -48,12 +65,17 @@ const parseHeader = (line: string | undefined) => {
 };
 
 const bodyOf = (text: string) =>
-  text.split("\n").slice(text.split("\n").indexOf("") + 1).join("\n");
+  text
+    .split("\n")
+    .slice(text.split("\n").indexOf("") + 1)
+    .join("\n");
 
 export const extract = (source: string, testName: string, body: string) =>
-  [...headerLines(source, testName, body), "", withOneTrailingNewline(body)].join(
-    "\n",
-  );
+  [
+    ...headerLines(source, testName, body),
+    "",
+    withOneTrailingNewline(body),
+  ].join("\n");
 
 export function extracted(text: string) {
   const header = parseHeader(text.split("\n")[0]);
@@ -63,23 +85,6 @@ export function extracted(text: string) {
     test: header.test,
     edited: fingerprint(bodyOf(text)) !== header.fingerprint,
   };
-}
-
-declare namespace tempPathFor {
-  /** beside the module, named for the module and the test */
-  export type Names = Table<
-    typeof tempPathFor,
-    [
-      [
-        args: [source: "src/counter.ts", test: "Counter > Chainable"],
-        expected: "src/counter.Counter_Chainable.temp.ts",
-      ],
-      [
-        args: [source: "src/codec.mts", test: "encode > Tagged[1]"],
-        expected: "src/codec.encode_Tagged[1].temp.ts",
-      ],
-    ]
-  >;
 }
 
 declare namespace extracted {
@@ -110,28 +115,32 @@ declare namespace extracted {
     { edited: true }
   >;
 
-  /** several tests in one file share what they import, and it says so */
+  /** several tests in one file share module state, and it says so */
   export type Warns = Expect<
     Invoke<
       typeof extract,
       [
-        "src/a.ts",
-        "a > Rows",
-        'import { f } from "./m.ts";\ntest("one", () => {});\ntest("two", () => {});'
+        source: "src/a.ts",
+        testName: "a > Rows",
+        body: 'import { f } from "./m.ts";\ntest("one", () => {});\ntest("two", () => {});',
       ]
     >,
     "includes",
-    "These tests share what they import"
+    "These tests share module state here"
   >;
 
   /** one test has nothing to share with, so it is not told about it */
   export type Quiet = Expect<
     Invoke<
       typeof extract,
-      ["src/a.ts", "a > One", 'import { f } from "./m.ts";\ntest("one", () => {});']
+      [
+        "src/a.ts",
+        "a > One",
+        'import { f } from "./m.ts";\ntest("one", () => {});',
+      ]
     >,
     "excludes",
-    "share what they import"
+    "share module state"
   >;
 
   /** nor is a file whose tests import nothing of yours */
@@ -141,7 +150,7 @@ declare namespace extracted {
       ["src/a.ts", "a > Rows", 'test("one", () => {});\ntest("two", () => {});']
     >,
     "excludes",
-    "share what they import"
+    "share module state"
   >;
 
   /** anything else is just a file */

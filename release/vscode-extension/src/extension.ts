@@ -17,6 +17,7 @@ import { displayPanels, type DisplayPanels } from "./panels.js";
 import { cacheCompiledModulesIn, printed } from "./printed.js";
 import { testRunner, type TestRunner } from "./runner.js";
 import { childrenOf, everyItem, testTree, type TestTree } from "./tree.js";
+import { explainedWarnings } from "./explained.js";
 import { printerWarnings } from "./warnings.js";
 
 type Parts = {
@@ -163,6 +164,7 @@ export function activate(context: vscode.ExtensionContext): void {
     ...testCommands(parts),
     ...generatedCommands(parts),
     ...printerWarnings(warnings),
+    ...explainedWarnings(warnings),
   );
   void controller.resolveHandler(undefined);
   context.subscriptions.push(...followDocuments(parts, lensesChanged));
