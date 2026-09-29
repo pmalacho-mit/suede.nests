@@ -1,9 +1,4 @@
-/// <reference types="node" />
-
-// JSON encoding for values that JSON cannot carry. Decoded by the extension
-// (and by display pages, which receive real typed arrays / bigints again).
-
-
+// also decoded in a webview, so it uses only what a browser has: btoa, not Buffer
 import type { Expect, Invoke, Table } from "../dsl.import.meta.vitest.ts";
 
 export type EncodedArray = Encoded[];
@@ -28,7 +23,18 @@ export type TypedArrayName = (typeof TYPED)[number];
 const isTypedName = (tag: string): tag is TypedArrayName =>
   (TYPED as readonly string[]).includes(tag);
 
-/** Encode any value into JSON-safe data. Cycles become `{ $ref: path }`. */
+const binaryOf = (bytes: Uint8Array) => {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return binary;
+};
+
+const toBase64 = (bytes: Uint8Array) => btoa(binaryOf(bytes));
+
+const fromBase64 = (base64: string) =>
+  Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+
+// a cycle becomes `{ $ref: path }`
 export function encode(value: unknown, seen: Map<object, string> = new Map(), path = "$"): Encoded {
   if (value === undefined) return { $type: "undefined" };
 
@@ -58,11 +64,9 @@ export function encode(value: unknown, seen: Map<object, string> = new Map(), pa
     const view = value as ArrayBufferView;
     return {
       $type: tag,
-      base64: Buffer.from(
-        view.buffer,
-        view.byteOffset,
-        view.byteLength,
-      ).toString("base64"),
+      base64: toBase64(
+        new Uint8Array(view.buffer, view.byteOffset, view.byteLength),
+      ),
     };
   }
 
@@ -112,7 +116,7 @@ export function encode(value: unknown, seen: Map<object, string> = new Map(), pa
   return out;
 }
 
-declare namespace Tests.encode {
+declare namespace encode {
   /** what JSON already carries goes through unchanged */
   export type Plain = Expect<
     Invoke<typeof encode, [[1, "a", true]]>,
@@ -137,7 +141,7 @@ declare namespace Tests.encode {
   >;
 }
 
-/** Inverse of `encode`. Class instances come back as plain objects (`$class` dropped); `$ref`s are left as-is. */
+// a `$ref` is left as it is
 export function decode(value: Encoded): unknown {
   if (value === null || typeof value !== "object") return value;
   if (Array.isArray(value)) return value.map(decode);
@@ -175,11 +179,9 @@ export function decode(value: Encoded): unknown {
       return new Set((value.values as Encoded[]).map(decode));
   }
   if (typeof type === "string" && isTypedName(type)) {
-    const bytes = Buffer.from(String(value.base64), "base64");
+    const bytes = fromBase64(String(value.base64));
     const Ctor = globalThis[type];
-    return new Ctor(
-      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
-    );
+    return new Ctor(bytes.buffer);
   }
   const out: { [key: string]: unknown } = {};
   for (const [key, val] of Object.entries(value))
@@ -187,7 +189,7 @@ export function decode(value: Encoded): unknown {
   return out;
 }
 
-declare namespace Tests.decode {
+declare namespace decode {
   /** a tagged bigint comes back as a real one */
   export type BigIntBack = Expect<
     Invoke<typeof decode, [{ $type: "bigint"; value: "10" }]>,

@@ -17,17 +17,63 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import ts from "typescript";
 
-import { asEmitContext } from "../vite-plugin/emit/context.mts";
-import { expr } from "../vite-plugin/emit/expression.mts";
-import { testBody } from "../vite-plugin/emit/assertion.mts";
-import { emitTests, render } from "../vite-plugin/emit/index.mts";
+import {
+  createEmitContext,
+  emitTests,
+  lowerAlias,
+  lowerBody,
+  lowerExpr,
+  namespaces,
+  printBody,
+  printExpr,
+  printTest,
+  render,
+} from "../vite-plugin/emit/index.mts";
 import { minimalFor } from "../vite-plugin/minimal.mts";
-import { emitTestAlias, namespaces } from "../vite-plugin/emit/suite.mts";
 
-import type { EmitInput, Warning } from "../vite-plugin/emit/context.mts";
+import type { EmitContext, EmitInput } from "../vite-plugin/emit/index.mts";
+
+type Join<
+  T extends readonly string[],
+  Sep extends string = "",
+> = T extends readonly [infer F extends string, ...infer R extends string[]]
+  ? R extends []
+    ? F
+    : `${F}${Sep}${Join<R, Sep>}`
+  : "";
+
+const join = <T extends string[], Seperator extends string>(
+  items: T,
+  seperator: Seperator,
+) => items.join(seperator) as Join<T, Seperator>;
+
+export const importFromDsl = <T extends string[]>(...identifiers: T) =>
+  `import type { ${join(identifiers, ", ")} } from "../dsl.import.meta.vitest.ts";\n` as const;
 
 /** Prefixed to every snippet, so `Expect`, `Invoke` and friends resolve. */
-export const DSL_IMPORT = `import type { Expect, Invoke, Construct, Call, Fixture, Widen, FromFile, Env, Snapshot, Nothing, Given, ExpectGiven, Throws, Table, Skip, Only, Todo, Configure } from "../dsl.import.meta.vitest.ts";\n`;
+export const DSL_IMPORT = importFromDsl(
+  "Expect",
+  "Invoke",
+  "Construct",
+  "Call",
+  "Fixture",
+  "Widen",
+  "FromFile",
+  "Env",
+  "Snapshot",
+  "Nothing",
+  "Given",
+  "ExpectGiven",
+  "Throws",
+  "Table",
+  "Skip",
+  "Only",
+  "Todo",
+  "Configure",
+  "Mock",
+  "Mocked",
+  "SkipIfNotFound",
+);
 
 /**
  * Snippets name their namespace after whatever they are about, the way a test
@@ -98,7 +144,8 @@ export function inputFor(code: string): EmitInput {
     );
   }
   const source = program?.getSourceFile(fileName);
-  if (!program || !source) throw new Error("bootstrap: the snippet did not load");
+  if (!program || !source)
+    throw new Error("bootstrap: the snippet did not load");
   return { program, source };
 }
 
@@ -121,31 +168,45 @@ export function aliasIn(code: string, alias: string): ts.TypeAliasDeclaration {
 export const typeIn = (code: string, alias = "Subject"): ts.TypeNode =>
   aliasIn(code, alias).type;
 
+/** A fresh context over the snippet. */
+export const contextFor = (code: string): EmitContext => {
+  const { program, source } = inputFor(code);
+  return createEmitContext(program, source);
+};
+
 // ── one helper per stage ───────────────────────────────────────────────────
 
-/** What `expr` prints for `type Subject = …`. */
+/** What `type Subject = …` prints as, as an expression. */
 export const printExpression = (code: string, alias = "Subject"): string =>
-  expr(inputFor(code), typeIn(code, alias));
+  printExpr(lowerExpr(contextFor(code), typeIn(code, alias)));
 
-/** The problems `expr` reports for `type Subject = …`, as messages. */
+/** The problems lowering `type Subject = …` reports, as messages. */
 export function expressionWarnings(code: string, alias = "Subject"): string[] {
-  const input = inputFor(code);
-  expr(input, typeIn(code, alias));
-  return asEmitContext(input).warnings.map((w: Warning) => w.message);
+  const cx = contextFor(code);
+  lowerExpr(cx, typeIn(code, alias));
+  return cx.warnings.map((w) => w.message);
 }
 
 /** The problems printing a whole file reports, as messages. */
 export const moduleWarnings = (code: string, root?: string): string[] =>
-  emitTests(inputFor(code), root).warnings.map((w: Warning) => w.message);
+  emitTests(inputFor(code), root).warnings.map((w) => w.message);
 
 /** The statements `type Subject = …` compiles to, read as a Test node. */
 export const printStatements = (code: string, alias = "Subject"): string[] =>
-  testBody(inputFor(code), typeIn(code, alias), false).map((l) => l.code);
+  printBody(lowerBody(contextFor(code), typeIn(code, alias), false)).flat();
+
+/**
+ * The `expect` statement alone, for tests about which matcher a condition
+ * prints: what a test takes on beforehand is bound to locals, and those say
+ * nothing about the matcher.
+ */
+export const printMatcher = (code: string, alias = "Subject"): string =>
+  printStatements(code, alias).at(-1)!;
 
 /** The generated test(s) for `export type <alias>`, as source. */
-export const printTest = (code: string, alias: string): string =>
-  emitTestAlias(inputFor(code), aliasIn(code, alias), pathOf(code, alias))
-    .map((t) => t.code)
+export const printAlias = (code: string, alias: string): string =>
+  lowerAlias(contextFor(code), aliasIn(code, alias), pathOf(code, alias))
+    .map((t) => printTest(t).code)
     .join("\n\n");
 
 /** The namespace path an alias is written in, as written. */

@@ -1,64 +1,71 @@
-// Vitest reporter that writes `.namespace-tests/results.json`: one record per
-// test with its state, errors and any display payloads recorded by ntCheck.
-// The IDE extension reads this file (and diagnostics.json, written by the
-// plugin at transform time) — no custom protocol.
 import fs from "node:fs";
 import path from "node:path";
+import { ensureDerived } from "./cache.mts";
 import { encode } from "./codec.mts";
+import { recordedFor, type DisplayRecord } from "./runtime.mts";
 
 import type { Reporter, TestCase, Vitest } from "vitest/node";
-import type { DisplayRecord } from "./runtime.mts";
 import type { Encoded } from "./codec.mts";
 
-/** One entry in results.json. */
+type EncodedDisplay = Omit<DisplayRecord, "actual" | "expected"> & {
+  actual: Encoded;
+  expected: Encoded;
+};
+
+type RecordedError = { message: string; diff: string | null; stack: string | null };
+
 export type ResultRecord = {
   id: string;
   name: string;
   fullName: string;
-  /** Relative to the Vitest root. */
   file: string;
-  /** Source-mapped: the `export type` line. */
-  location: { line: number, column: number } | null;
+  // source-mapped to the `export type` the test was written as
+  location: { line: number; column: number } | null;
   state: "passed" | "failed" | "skipped" | "pending";
   duration: number | null;
-  errors: { message: string, diff: string | null, stack: string | null }[];
-  displays: (Omit<DisplayRecord, "actual" | "expected"> & { actual: Encoded, expected: Encoded })[];
+  errors: RecordedError[];
+  displays: EncodedDisplay[];
 };
 
-export default class NamespaceTestsReporter implements Reporter {
-  outDir: string;
-  results: ResultRecord[];
-  root: string;
+const recordedError = ({ message, diff, stack }: { message: string; diff?: string; stack?: string }): RecordedError => ({
+  message,
+  diff: diff ?? null,
+  stack: stack ?? null,
+});
 
-  constructor({ outDir = ".namespace-tests" }: { outDir?: string } = {}) {
-    this.outDir = outDir;
-    this.results = [];
-    this.root = process.cwd();
-  }
+const encodedDisplay = (display: DisplayRecord): EncodedDisplay => ({
+  ...display,
+  actual: encode(display.actual),
+  expected: encode(display.expected),
+});
+
+export default class NamespaceTestsReporter implements Reporter {
+  results: ResultRecord[] = [];
+  root = process.cwd();
 
   onInit(ctx: Vitest) {
     this.root = ctx.config.root;
   }
 
   onTestCaseResult(testCase: TestCase) {
-    const r = testCase.result();
-    const meta = testCase.meta() as { namespaceTests?: DisplayRecord[] };
+    const result = testCase.result();
     this.results.push({
       id: testCase.id,
       name: testCase.name,
       fullName: testCase.fullName,
       file: path.relative(this.root, testCase.module.moduleId),
       location: testCase.location ?? null,
-      state: r.state,
+      state: result.state,
       duration: testCase.diagnostic()?.duration ?? null,
-      errors: (r.errors ?? []).map((e) => ({ message: e.message, diff: e.diff ?? null, stack: e.stack ?? null })),
-      displays: (meta.namespaceTests ?? []).map((d) => ({ ...d, actual: encode(d.actual), expected: encode(d.expected) })),
+      errors: (result.errors ?? []).map(recordedError),
+      displays: recordedFor({ meta: testCase.meta() }).map(encodedDisplay),
     });
   }
 
   onTestRunEnd() {
-    const dir = path.join(this.root, this.outDir);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "results.json"), JSON.stringify({ generatedAt: new Date().toISOString(), results: this.results }, null, 2));
+    fs.writeFileSync(
+      path.join(ensureDerived(), "results.json"),
+      JSON.stringify({ generatedAt: new Date().toISOString(), results: this.results }, null, 2),
+    );
   }
 }

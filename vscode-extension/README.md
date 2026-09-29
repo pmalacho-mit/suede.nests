@@ -8,10 +8,18 @@ line you wrote it on. Running one runs exactly that one.
 
 - **Run** — a single test, through Vitest, reported back at its own line. A file
   runs when you open or save it, and the lens shows where each test stands.
+- **What Vitest sees** — at the top of a file with tests: your file diffed
+  against the module Vitest is actually handed, which is your code plus the
+  block that imports one generated test per `export type`.
 - **Extract** — writes the test out as a real file beside the module it came
   from (`counter.Counter_Chainable.temp.ts`) and opens it: the part of your
   module the test needs, then the test.
-- **Run · Debug · Delete** — at the top of an extracted file. *Run* is verbose,
+- **Run · Debug · Delete · What Vitest sees** — at the top of an extracted
+  file. The last diffs your copy against what a run actually serves for that
+  test, where every first-party import carries the test's tag: a run gives each
+  test its own copy of the modules it reaches, and a file can only hold one. So
+  a table extracted into one file shares what a run would have kept apart —
+  which is why the header says so when it can bite. *Run* is verbose,
   so every test in the file reports by name. *Debug* launches Vitest under the
   Node debugger on that one file, in a single process, with no test timeout, so
   a breakpoint you are sat on is not a failure. That is where you go to see what
@@ -21,6 +29,13 @@ line you wrote it on. Running one runs exactly that one.
   your own code. The frames from Vitest, chai and Node are dropped, as are the
   ones pointing into the generated test, since that module is served from
   memory and its path opens nothing.
+- **Display** — on a test that names an HTML page (`Expect<…, "./chart.html">`),
+  opens that page with what the run saw: a chart instead of a wall of numbers.
+  The page is found relative to the test's file; a missing one is marked as an
+  error where it is named. The page receives a `namespace-tests:result` message
+  with `actual`, `expected`, `passed`, `message` and `meta`, decoded so a `Map`
+  or a `bigint` arrives as itself. Listen for it before the page finishes
+  loading. It can use VS Code's `--vscode-*` theme variables.
 - **Diagnostics** — what the printer could not turn into a value, reported where
   you wrote it, before anything runs.
 

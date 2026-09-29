@@ -1,97 +1,76 @@
-// The printer.
-// Turns every `export type X = Expect<…>` within a `declare namespace Tests…`
-// block into an ordinary Vitest test.
-//
-// There is no IR: a TypeScript *type* literal is printed as the equivalent
-// *value* literal, `Invoke<typeof f, [a]>` prints as `await f(a)`, and each
-// DSL condition maps onto a built-in `expect` matcher.
-//
-// Every test comes back on its own — a top-level `test(…)` named for the
-// namespace path it was written in, with each line anchored to the source line
-// it came from. `render` joins them into the module the plugin appends.
-//
-// The pipeline, each stage in its own module:
-//   context.mts     the shared state (`cx`) every stage threads through
-//   expression.mts  type node  → JS expression
-//   assertion.mts   condition  → `expect` chain, Test node → statements
-//   suite.mts       test alias → one `EmittedTest` per test case
-//   header.mts      the generated module's preamble
-import ts from "typescript";
+import { createEmitContext } from "./context.mts";
+import { explainedMistakes } from "./explain.mts";
+import {
+  isExportedTypeAlias,
+  isTest,
+  lowerAlias,
+  namespaces,
+} from "./model.mts";
+import { allNeeds, headerLines, printTest } from "./print.mts";
 
-import { asEmitContext } from "./context.mts";
-import { headerLines } from "./header.mts";
-import { emitTestAlias, isTest, namespaces } from "./suite.mts";
+import type ts from "typescript";
+import type { EmitInput, Line, Warning } from "./context.mts";
+import type { EmittedTest } from "./print.mts";
 
-import type { EmitInputOrContext, Line, Warning } from "./context.mts";
-import type { EmittedTest } from "./suite.mts";
-
-export { createEmitContext, DSL_FILE, freshTestState } from "./context.mts";
-export * from "./assertion.mts";
-export * from "./context.mts";
-export * from "./expression.mts";
-export * from "./header.mts";
-export * from "./suite.mts";
+export type { EmitContext, EmitInput, Line, Warning } from "./context.mts";
+export type { EmittedTest, Needs } from "./print.mts";
+export * from "./ir.mts";
+export { createEmitContext, RUNTIME_MODULE } from "./context.mts";
+export {
+  allNeeds,
+  headerLines,
+  needsOf,
+  printExpr,
+  namesIn,
+  printBody,
+  printStatement,
+  printTest,
+} from "./print.mts";
+export {
+  lowerAlias,
+  lowerBody,
+  lowerExpr,
+  namespaces,
+  testName,
+} from "./model.mts";
 
 import type { Expect, Invoke } from "../../dsl.import.meta.vitest.ts";
-import type { printModule, testNames } from "../../_internal/harness.mts";
-/** What `emitTests` returns. */
+import type {
+  printHeader,
+  printModule,
+  testNames,
+} from "../../_internal/harness.mts";
+
 export type Emitted = {
-  /** The generated module's preamble: the imports and helpers every test shares. */
   header: string[];
-  /** One entry per test case, in source order. */
   tests: EmittedTest[];
-  /** Authoring problems found while printing, across the whole file. */
   warnings: Warning[];
 };
 
-/**
- * Print the tests of one source file.
- *
- * Every `declare namespace` is looked at: a test is an exported alias that *is*
- * one — `Expect`, `Table`, `Throws`, `Given`, or any of those under a modifier —
- * so a namespace can be named after whatever it tests. A test's name is the
- * namespace path it was written in, as written.
- *
- * @param root Only look inside this namespace. Nothing is skipped without it.
- * @param runtime Specifier the generated code imports `ntCheck` from.
- */
 export function emitTests(
-  inputOrContext: EmitInputOrContext,
+  { program, source }: EmitInput,
   root?: string,
   runtime?: string,
 ): Emitted {
-  const cx = asEmitContext(inputOrContext);
-  if (runtime) cx.runtime = runtime;
-  const { source } = cx;
-
+  const cx = createEmitContext(program, source, runtime);
   const tests: EmittedTest[] = [];
+  const aliases: ts.TypeAliasDeclaration[] = [];
   for (const { segs, body } of namespaces(source)) {
     if (root && segs[0] !== root) continue;
     for (const stmt of body.statements)
-      if (isExportedTypeAlias(stmt) && isTest(cx, stmt.type))
-        tests.push(...emitTestAlias(cx, stmt, segs));
+      if (isExportedTypeAlias(stmt) && isTest(cx, stmt.type)) {
+        aliases.push(stmt);
+        tests.push(...lowerAlias(cx, stmt, segs).map(printTest));
+      }
   }
-  // The header can only be written once every test has said what it needs.
-  if (!tests.length) return { header: [], tests: [], warnings: cx.warnings };
-  return { header: headerLines(cx), tests, warnings: cx.warnings };
+  // written last: only once every test has said what it needs
+  const header = tests.length
+    ? headerLines(allNeeds(tests.map((t) => t.needs)), cx.runtime)
+    : [];
+  return { header, tests, warnings: [...cx.warnings, ...explainedMistakes(cx, aliases)] };
 }
 
-/** The whole generated module: the preamble, then every test, with per-line anchors. */
-export function render(emitted: Emitted): {
-  code: string;
-  anchors: (number | null)[];
-} {
-  const lines: Line[] = [
-    ...emitted.header.map((code) => ({ code, line: null })),
-    ...emitted.tests.flatMap((t) => [{ code: "", line: null }, ...t.lines]),
-  ];
-  return {
-    code: lines.map((l) => l.code).join("\n"),
-    anchors: lines.map((l) => l.line),
-  };
-}
-
-declare namespace Tests.emitTests {
+declare namespace emitTests {
   type Suite = `
     const add = (a: number, b: number) => a + b;
     declare namespace add {
@@ -116,7 +95,7 @@ declare namespace Tests.emitTests {
       "add > Rows[0]",
       "add > Rows[1]",
       "other > nested > Deep",
-      "elsewhere > AlsoATest"
+      "elsewhere > AlsoATest",
     ]
   >;
 
@@ -145,7 +124,7 @@ declare namespace Tests.emitTests {
   export type Rendered = Expect<
     Invoke<typeof printModule, [Suite]>,
     "includes",
-    'test("other > nested > Deep", async () => {'
+    'test("other > nested > Deep", () => {'
   >;
 
   /** a file with no test namespace emits nothing at all */
@@ -154,14 +133,70 @@ declare namespace Tests.emitTests {
     "=",
     ""
   >;
+
+  type Plain = `
+    declare namespace a { 
+      export type T = Expect<1, "=", 1>; 
+    }
+  `;
+
+  type ReadsFile = `
+    declare namespace a { 
+      export type T = Expect<FromFile<"./a.txt">, "=", "hi">; 
+    }
+  `;
+
+  /** the preamble is what the tests turned out to need, and nothing when there are none */
+  export type Preamble = [
+    Expect<
+      Invoke<typeof printHeader, [Plain]>,
+      "=",
+      [
+        "// ───────── generated by namespace-tests; not part of your build ─────────",
+        'import { test, expect } from "vitest";',
+      ]
+    >,
+    Expect<
+      Invoke<typeof printHeader, [ReadsFile]>,
+      "includes",
+      'import { readFileSync } from "node:fs";'
+    >,
+    Expect<
+      Invoke<typeof printHeader, ["const add = (a: number) => a;"]>,
+      "=",
+      []
+    >,
+  ];
+
+  type TypeOnlyImport = `
+    import type { existsSync } from "node:fs";
+    declare namespace a { 
+      export type T = Expect<
+        Invoke<typeof existsSync, ["/nowhere"]>, 
+        "=", 
+        false
+      >; 
+    }
+  `;
+
+  /** a type-only binding a test uses as a value is imported again, as a value */
+  export type ValueImport = Expect<
+    Invoke<typeof printHeader, [TypeOnlyImport]>,
+    "includes",
+    'import { existsSync as existsSync$ } from "node:fs"; // value import: the original import is type-only'
+  >;
 }
 
-/** `export type X = …` inside a namespace block: one test. */
-function isExportedTypeAlias(
-  node: ts.Statement,
-): node is ts.TypeAliasDeclaration {
-  return (
-    ts.isTypeAliasDeclaration(node) &&
-    !!node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
-  );
+export function render(emitted: Emitted): {
+  code: string;
+  anchors: (number | null)[];
+} {
+  const lines: Line[] = [
+    ...emitted.header.map((code) => ({ code, line: null })),
+    ...emitted.tests.flatMap((t) => [{ code: "", line: null }, ...t.lines]),
+  ];
+  return {
+    code: lines.map((l) => l.code).join("\n"),
+    anchors: lines.map((l) => l.line),
+  };
 }

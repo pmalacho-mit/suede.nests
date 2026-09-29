@@ -1,69 +1,58 @@
-// Finding the library in the workspace.
-//
-// The DSL's filename is the one fixed point: wherever this library was
-// installed — vendored beside your code or inside node_modules — the entry is
-// `dsl.import.meta.vitest.ts`, and the plugin sits next to it.
 import fs from "node:fs";
 import path from "node:path";
 
-const found = new Map<string, Library | null>();
+import { DSL_FILE, isSearchable } from "../../workspace.mts";
 
 export type Library = {
-  /** The folder the release was installed into. */
   root: string;
-  /** The CLI that prints one test as a standalone file. */
-  minimal: string;
-  /** The runtime generated tests import `ntCheck` from. */
+  cli: string;
   runtime: string;
-  /** The reporter that records what a failure actually saw, diff and all. */
   reporter: string;
+  derived: string;
 };
 
-const DSL = "dsl.import.meta.vitest.ts";
+const libraryAt = (root: string): Library => ({
+  root,
+  cli: path.join(root, "cli.mjs"),
+  runtime: path.join(root, "vite-plugin", "runtime.mts"),
+  reporter: path.join(root, "vite-plugin", "reporter.mts"),
+  derived: path.join(root, ".derived"),
+});
 
-/** Walks down from the workspace folder, skipping the places it cannot be. */
-export function findLibrary(folder: string): Library | null {
-  const cached = found.get(folder);
-  if (cached !== undefined) return cached;
+// wherever the library is installed, the DSL keeps its name and the command line sits beside it
+const isLibrary = (dir: string) =>
+  [DSL_FILE, "cli.mjs"].every((file) =>
+    fs.existsSync(path.join(dir, file)),
+  );
 
-  const skip = new Set(["node_modules", "dist", "out", "coverage"]);
-  const queue = [folder];
-  let library: Library | null = null;
-
-  while (queue.length && !library) {
-    const dir = queue.shift()!;
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        if (!skip.has(entry.name) && !entry.name.startsWith("."))
-          queue.push(path.join(dir, entry.name));
-        continue;
-      }
-      if (entry.name !== DSL) continue;
-      // `cli.mts` answers from the cache without loading a compiler; older
-      // installs only have `minimal.mts`, which does the same work the slow way.
-      const cli = path.join(dir, "vite-plugin", "cli.mts");
-      const minimal = path.join(dir, "vite-plugin", "minimal.mts");
-      if (fs.existsSync(cli) || fs.existsSync(minimal)) {
-        library = {
-          root: dir,
-          minimal: fs.existsSync(cli) ? cli : minimal,
-          runtime: path.join(dir, "vite-plugin", "runtime.mts"),
-          reporter: path.join(dir, "vite-plugin", "reporter.mts"),
-        };
-        break;
-      }
-    }
+const entriesOf = (dir: string) => {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
   }
+};
 
-  found.set(folder, library);
-  return library;
+function* breadthFirst(folder: string): Generator<string> {
+  const queue = [folder];
+  for (let dir = queue.shift(); dir !== undefined; dir = queue.shift()) {
+    yield dir;
+    for (const entry of entriesOf(dir))
+      if (entry.isDirectory() && isSearchable(entry))
+        queue.push(path.join(dir, entry.name));
+  }
 }
 
-/** Forget what we found, for when the workspace changes underneath us. */
+const locate = (folder: string) => {
+  for (const dir of breadthFirst(folder)) if (isLibrary(dir)) return libraryAt(dir);
+  return null;
+};
+
+const found = new Map<string, Library | null>();
+
+export function findLibrary(folder: string): Library | null {
+  if (!found.has(folder)) found.set(folder, locate(folder));
+  return found.get(folder) ?? null;
+}
+
 export const forgetLibrary = () => found.clear();

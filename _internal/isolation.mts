@@ -14,7 +14,7 @@ const bumpLocal = (): number => ++local;
 
 const localTally = (): number => local;
 
-declare namespace isolation {
+declare namespace Isolation {
   /** a dependency's state is the test's own … */
   export type DependencyFirst = Given<
     Invoke<typeof bump, []>,

@@ -1,19 +1,9 @@
-// Finding the tests in a file, without type-checking anything.
-//
-// A `ts.Program` would give exact answers and cost seconds; parsing one file
-// gives the namespace path, the alias names and their lines, which is all the
-// Test Explorer needs. Meaning is the library's business, not the editor's.
 import ts from "typescript";
 
-import type {
-  Call,
-  Construct,
-  Expect,
-  Invoke,
-  Table,
-} from "../../dsl.import.meta.vitest.ts";
+import { isDslModule } from "../../workspace.mts";
 
-/** Files only count as tests when they import the DSL, which is what Vitest keys on too. */
+import type { Call, Expect, Invoke } from "../../dsl.import.meta.vitest.ts";
+
 export const hasTests = (text: string) => text.includes("import.meta.vitest");
 
 declare namespace hasTests {
@@ -36,32 +26,39 @@ import {} from "../namespace-tests/dsl.import.meta.vitest.ts";
 const createSource = (fileName: string, text: string) =>
   ts.createSourceFile(fileName, text, ts.ScriptTarget.ES2022, true);
 
-const DSL_MODULE = /(^|\/)dsl\.import\.meta\.vitest(\.ts)?$/;
+const importsTheDsl = (
+  statement: ts.Statement,
+): statement is ts.ImportDeclaration =>
+  ts.isImportDeclaration(statement) &&
+  ts.isStringLiteral(statement.moduleSpecifier) &&
+  isDslModule(statement.moduleSpecifier.text);
 
-/** What this file binds the DSL to: `Expect`, `Expect as Assert`, `* as dsl`. */
-const dslBindings = (source: ts.SourceFile): ReadonlySet<string> => {
-  const bound = new Set<string>();
-  for (const statement of source.statements) {
-    if (
-      !ts.isImportDeclaration(statement) ||
-      !ts.isStringLiteral(statement.moduleSpecifier) ||
-      !DSL_MODULE.test(statement.moduleSpecifier.text)
-    )
-      continue;
-    const bindings = statement.importClause?.namedBindings;
-    if (!bindings) continue;
-    if (ts.isNamespaceImport(bindings)) bound.add(bindings.name.text);
-    else for (const { name } of bindings.elements) bound.add(name.text);
-  }
-  return bound;
-};
+const WHOLE_MODULE = "*";
+
+type Bindings = ReadonlyMap<string, string>;
+
+function* boundNames(
+  statement: ts.ImportDeclaration,
+): Generator<[local: string, dsl: string]> {
+  const bindings = statement.importClause?.namedBindings;
+  if (!bindings) return;
+  if (ts.isNamespaceImport(bindings)) yield [bindings.name.text, WHOLE_MODULE];
+  else
+    for (const { name, propertyName } of bindings.elements)
+      yield [name.text, (propertyName ?? name).text];
+}
+
+const dslBindings = (source: ts.SourceFile): Bindings =>
+  new Map(
+    source.statements.filter(importsTheDsl).flatMap((s) => [...boundNames(s)]),
+  );
 
 declare namespace dslBindings {
   /**
    * The DSL under other names: what counts is where the type came from, not
    * what it is spelled. A local type of the same name is not the DSL's.
    */
-  export type Spellings = `
+  type Spellings = `
 import type { Expect as Assert } from "namespace-tests/dsl.import.meta.vitest";
 import type * as dsl from "./dsl.import.meta.vitest.ts";
 import type { Expect as Borrowed } from "./somewhere-else.ts";
@@ -77,197 +74,190 @@ declare namespace renamed {
   type Parsed = Invoke<typeof createSource, ["probe.ts", Spellings]>;
   type Bound = Invoke<typeof dslBindings, [Parsed]>;
 
+  type Lookup<Local extends string> = Call<Bound, "get", [Local]>;
+
   export type BoundIsLimited = [
     Expect<Bound["size"], "=", 2>,
-    Expect<Bound, "includes", "Assert">,
-    Expect<Bound, "includes", "dsl">,
-    Expect<Bound, "excludes", "Borrowed">,
-    Expect<Bound, "excludes", "Expect">,
+    Expect<Lookup<"Assert">, "=", "Expect">,
+    Expect<Lookup<"dsl">, "=", "*">,
+    Expect<Lookup<"Borrowed">, "=", undefined>,
+    Expect<Lookup<"Expect">, "=", undefined>,
   ];
 }
 
-/** The name a type reference starts with: `Expect`, or the `dsl` of `dsl.Expect`. */
-const head = (name: ts.EntityName): string =>
-  ts.isIdentifier(name) ? name.text : head(name.left);
+const stringLiteral = (node: ts.TypeNode | undefined) =>
+  node && ts.isLiteralTypeNode(node) && ts.isStringLiteral(node.literal)
+    ? node.literal
+    : null;
 
-/**
- * Is this the type of a test? It is if it came from the DSL — or a tuple of
- * such, as the DSL's `Test` says. Whether the printer can make a runnable test
- * of it is the printer's to say, and it says so where it was written.
- */
-const testType = (
+const displayMember = (config: ts.TypeLiteralNode) => {
+  for (const member of config.members)
+    if (ts.isPropertySignature(member) && member.name.getText() === "display")
+      return stringLiteral(member.type);
+  return null;
+};
+
+const dslNameOf = (name: ts.EntityName, dsl: Bindings): string | null => {
+  if (ts.isIdentifier(name)) {
+    const bound = dsl.get(name.text);
+    return bound && bound !== WHOLE_MODULE ? bound : null;
+  }
+  const qualifiesTheDsl =
+    ts.isIdentifier(name.left) && dsl.get(name.left.text) === WHOLE_MODULE;
+  return qualifiesTheDsl ? name.right.text : null;
+};
+
+const pageNamedBy = (argument: ts.TypeNode) =>
+  stringLiteral(argument) ??
+  (ts.isTypeLiteralNode(argument) ? displayMember(argument) : null);
+
+// where the printer reads a page, and where it looks for the tests that might name one
+const PAGE_ARGUMENT = new Map([
+  ["Expect", 3],
+  ["ExpectGiven", 4],
+]);
+const TEST_ARGUMENT = new Map([
+  ["Given", 1],
+  ["Configure", 1],
+  ["Skip", 0],
+  ["SkipIfNotFound", 1],
+  ["Only", 0],
+]);
+
+const withoutLabel = (element: ts.TypeNode) =>
+  ts.isNamedTupleMember(element) ? element.type : element;
+
+const displayIn = (
   type: ts.TypeNode | undefined,
-  dsl: ReadonlySet<string>,
-): boolean => {
+  dsl: Bindings,
+): ts.StringLiteral | null => {
+  if (!type) return null;
+  if (ts.isTupleTypeNode(type))
+    return (
+      type.elements.map((e) => displayIn(withoutLabel(e), dsl)).find(Boolean) ??
+      null
+    );
+  if (!ts.isTypeReferenceNode(type)) return null;
+  const name = dslNameOf(type.typeName, dsl);
+  const argument = (index: number | undefined) =>
+    index === undefined ? undefined : type.typeArguments?.[index];
+  const page = argument(PAGE_ARGUMENT.get(name ?? ""));
+  if (page) return pageNamedBy(page);
+  return displayIn(argument(TEST_ARGUMENT.get(name ?? "")), dsl);
+};
+
+// the printer, not the editor, says whether it can run what the DSL wrote
+const isTestType = (type: ts.TypeNode | undefined, dsl: Bindings): boolean => {
   if (!type) return false;
   if (ts.isTupleTypeNode(type))
     return (
       type.elements.length > 0 &&
-      type.elements.every((element) => testType(element, dsl))
+      type.elements.every((element) => isTestType(element, dsl))
     );
-  return ts.isTypeReferenceNode(type) && dsl.has(head(type.typeName));
+  return ts.isTypeReferenceNode(type) && dslNameOf(type.typeName, dsl) !== null;
 };
 
-const discoverable = (
+const isExported = (statement: ts.Statement) =>
+  ts.canHaveModifiers(statement) &&
+  !!ts
+    .getModifiers(statement)
+    ?.some(({ kind }) => kind === ts.SyntaxKind.ExportKeyword);
+
+const isTest = (
   statement: ts.Statement,
-  dsl: ReadonlySet<string>,
+  dsl: Bindings,
 ): statement is ts.TypeAliasDeclaration =>
   ts.isTypeAliasDeclaration(statement) &&
-  (statement.modifiers?.some(
-    ({ kind }) => kind === ts.SyntaxKind.ExportKeyword,
-  ) ??
-    false) &&
-  testType(statement.type, dsl);
+  isExported(statement) &&
+  isTestType(statement.type, dsl);
 
-export type DiscoveredTest = {
-  /** What Vitest reports, and what `-t` matches: `Counter > Chainable`. */
+type Range = { line: number; column: number; length: number };
+
+export type DiscoveredTest = Range & {
   name: string;
-  /** The `export type` alias on its own. */
   alias: string;
-  /** Namespace segments, as they were written. */
   path: string[];
-  /** 0-based line of the alias. */
-  line: number;
-  /** 0-based column where the alias name starts, and its width. */
-  column: number;
-  length: number;
-  /** The whole `export type … = …;` as it was written. */
   source: string;
+  display: string | null;
+  displayAt: Range | null;
+};
+
+const rangeOf = (source: ts.SourceFile, node: ts.Node): Range => {
+  const start = node.getStart(source);
+  const { line, character } = source.getLineAndCharacterOfPosition(start);
+  return { line, column: character, length: node.getEnd() - start };
 };
 
 const discovered = (
   source: ts.SourceFile,
   statement: ts.TypeAliasDeclaration,
   path: string[],
+  dsl: Bindings,
 ): DiscoveredTest => {
-  const { line, character } = source.getLineAndCharacterOfPosition(
-    statement.name.getStart(source),
-  );
+  const page = displayIn(statement.type, dsl);
   return {
     path,
-    line,
+    ...rangeOf(source, statement.name),
     name: [...path, statement.name.text].join(" > "),
     alias: statement.name.text,
-    column: character,
-    length: statement.name.text.length,
+    display: page?.text ?? null,
+    displayAt: page ? rangeOf(source, page) : null,
     source: statement.getText(source).trim(),
   };
 };
 
-/**
- * Every test in a file: an exported alias that *is* one, inside any
- * `declare namespace`. A namespace holds tests because of what its aliases are,
- * not because of what it is called, so it can be named after whatever it
- * covers. Pass `root` to look inside that namespace alone.
- */
+type Namespace = { path: string[]; body: ts.ModuleBlock };
+
+// `declare namespace A.B` nests B inside A without a block between them
+const namespaceAt = (
+  node: ts.ModuleDeclaration,
+  outer: string[],
+): Namespace | null => {
+  const path = [...outer];
+  let current: ts.ModuleBody | ts.ModuleDeclaration | undefined = node;
+  while (
+    current &&
+    ts.isModuleDeclaration(current) &&
+    ts.isIdentifier(current.name)
+  ) {
+    path.push(current.name.text);
+    current = current.body;
+  }
+  return current && ts.isModuleBlock(current) ? { path, body: current } : null;
+};
+
+function* namespacesIn(
+  node: ts.Node,
+  outer: string[] = [],
+): Generator<Namespace> {
+  const children: ts.Node[] = [];
+  ts.forEachChild(node, (child) => {
+    children.push(child);
+  });
+  for (const child of children) {
+    if (!ts.isModuleDeclaration(child) || !ts.isIdentifier(child.name))
+      yield* namespacesIn(child, outer);
+    else {
+      const namespace = namespaceAt(child, outer);
+      if (namespace) yield namespace;
+    }
+  }
+}
+
 export function discover(
   fileName: string,
   text: string,
   root?: string,
 ): DiscoveredTest[] {
   const source = createSource(fileName, text);
-  const found: DiscoveredTest[] = [];
   const dsl = dslBindings(source);
-
-  const walk = (node: ts.Node, prefix: string[]): void => {
-    if (ts.isModuleDeclaration(node) && ts.isIdentifier(node.name)) {
-      const segs = [...prefix, node.name.text];
-      let body = node.body;
-      while (
-        body &&
-        ts.isModuleDeclaration(body) &&
-        ts.isIdentifier(body.name)
-      ) {
-        segs.push(body.name.text);
-        body = body.body;
-      }
-
-      if (!body || !ts.isModuleBlock(body)) return;
-      if (root && segs[0] !== root) return;
-
-      for (const statement of body.statements)
-        if (discoverable(statement, dsl))
-          found.push(discovered(source, statement, segs));
-      return;
-    }
-    ts.forEachChild(node, (child) => walk(child, prefix));
-  };
-
-  ts.forEachChild(source, (child) => walk(child, []));
-  return found;
-}
-
-/**
- * A test name as something to compare, rather than to show. The separator
- * between namespace segments is the library's to choose, and a name coming back
- * from a run was printed by whichever version of it the workspace has — which
- * need not be the one this extension was built against.
- */
-export const nameKey = (name: string) =>
-  name
-    .split(/\s*[\u203a>]\s*/)
-    .map((segment) => segment.trim())
-    .join(">");
-
-declare namespace Tests.nameKey {
-  /** however the separator is spelled, the same test is the same test */
-  export type Spellings = Table<
-    typeof nameKey,
-    [
-      [args: ["Counter > Chainable"], expected: "Counter>Chainable"],
-      [args: ["Counter \u203a Chainable"], expected: "Counter>Chainable"],
-      [args: ["AtTheRoot"], expected: "AtTheRoot"],
-    ]
-  >;
-
-  /** a table row keeps its index, which is how a row is told from its table */
-  export type Rows = Expect<
-    Invoke<typeof nameKey, ["encode \u203a Tagged[1]"]>,
-    "=",
-    "encode>Tagged[1]"
-  >;
-}
-
-/**
- * A test name as Vitest's `-t` wants it: a regular expression. A name is not
- * one — `Rows[1]` reads as a character class and matches `Rows1`, which is no
- * test at all — so every name is escaped, and the separator is left open so the
- * filter works whichever way the library spells it.
- */
-export const testFilter = (name: string) =>
-  name
-    .split(/\s*[\u203a>]\s*/)
-    .map((segment) => segment.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-    .join("\\s*[\u203a>]\\s*");
-
-declare namespace testFilter {
-  type TagToFilter = Invoke<typeof testFilter, ["encode > Tagged[1]"]>;
-
-  /** a table row is a name, not a pattern: its brackets are literal */
-  export type Rows = Expect<
-    TagToFilter,
-    "=",
-    "encode\\s*[\u203a>]\\s*Tagged\\[1\\]"
-  >;
-
-  /** Test the filter for a name, as the regular expression Vitest makes of it */
-  type TestRegExp<Query extends string> = Call<
-    Construct<typeof RegExp, [TagToFilter]>,
-    "test",
-    [Query]
-  >;
-
-  /** it matches the name it was built from */
-  export type Matches = Expect<TestRegExp<"encode > Tagged[1]">, "truthy">;
-
-  /** and the same name spelled the other way */
-  export type EitherSeparator = Expect<
-    TestRegExp<"encode \u203a Tagged[1]">,
-    "truthy"
-  >;
-
-  /** but not what the unescaped name would have matched */
-  export type NotTheClass = Expect<TestRegExp<"encode > Tagged1">, "falsy">;
+  return [...namespacesIn(source)]
+    .filter(({ path }) => !root || path[0] === root)
+    .flatMap(({ path, body }) =>
+      body.statements
+        .filter((statement) => isTest(statement, dsl))
+        .map((statement) => discovered(source, statement, path, dsl)),
+    );
 }
 
 declare namespace discover {
@@ -301,25 +291,9 @@ declare namespace Tests.elsewhere {
   /** an exported alias that is not a test is not one: two here, not three */
   export type OnlyTests = Expect<Found["length"], "=", 2>;
 
-  /**
-   * The DSL under other names: what counts is where the type came from, not
-   * what it is spelled. A local type of the same name is not the DSL's.
-   */
-  type Spellings = `
-import type { Expect as Assert } from "namespace-tests/dsl.import.meta.vitest";
-import type * as dsl from "./dsl.import.meta.vitest.ts";
-import type { Expect as Borrowed } from "./somewhere-else.ts";
-type Expect<A, B, C> = { mine: [A, B, C] };
-declare namespace renamed {
-  export type Aliased = Assert<1, "=", 1>;
-  export type Qualified = dsl.Expect<1, "=", 1>;
-  export type NotTheirs = Expect<1, "=", 1>;
-  export type NotFromUs = Borrowed<1, "=", 1>;
-}
-`;
-
+  /** the DSL under other names counts; a local type of the same name does not */
   export type ByOrigin = Expect<
-    Invoke<typeof discover, ["probe.ts", Spellings]>,
+    Invoke<typeof discover, ["probe.ts", dslBindings.Spellings]>,
     "matches",
     [{ name: "renamed > Aliased" }, { name: "renamed > Qualified" }]
   >;
@@ -329,5 +303,61 @@ declare namespace renamed {
     Invoke<typeof discover, ["probe.ts", Suite, "Tests"]>,
     "matches",
     [{ name: "Tests > elsewhere > Deep" }]
+  >;
+}
+
+declare namespace displayIn {
+  type Suite = `
+import type { Expect, Invoke, Skip } from "./dsl.import.meta.vitest.ts";
+declare namespace histogram {
+  export type Visual = Expect<1, "=", 1, "./chart.html">;
+  export type Configured = Expect<1, "=", 1, { display: "./page.html"; timeout: 10 }>;
+  export type Skipped = Skip<Expect<1, "=", 1, "./skipped.html">>;
+  export type Plain = Expect<1, "=", 1>;
+}
+`;
+
+  /** where the page is named, so a missing one can be marked there */
+  export type Located = Expect<
+    Invoke<typeof discover, ["probe.ts", Suite]>,
+    "matches",
+    [
+      { alias: "Visual"; displayAt: { line: 3; column: 41; length: 14 } },
+      { alias: "Configured"; displayAt: { line: 4; column: 56; length: 13 } },
+      { alias: "Skipped"; displayAt: { line: 5; column: 47; length: 16 } },
+      { alias: "Plain"; displayAt: null },
+    ]
+  >;
+
+  /** written as the page, as a config that names one, or under a modifier */
+  export type Pages = Expect<
+    Invoke<typeof discover, ["probe.ts", Suite]>,
+    "matches",
+    [
+      { alias: "Visual"; display: "./chart.html" },
+      { alias: "Configured"; display: "./page.html" },
+      { alias: "Skipped"; display: "./skipped.html" },
+      { alias: "Plain"; display: null },
+    ]
+  >;
+
+  type Elsewhere = `
+import type { Configure, Expect, Given, Invoke } from "./dsl.import.meta.vitest.ts";
+declare namespace load {
+  export type Argument = Expect<Invoke<typeof load, ["./data.html"]>, "=", 1>;
+  export type Configured = Configure<{ display: "./ignored.html" }, Expect<1, "=", 1>>;
+  export type AfterGiven = Given<Invoke<typeof load, ["./x.html"]>, Expect<1, "=", 1, "./given.html">>;
+}
+`;
+
+  /** a page is only where the printer reads one: an `.html` anywhere else is data */
+  export type OnlyWherePrinted = Expect<
+    Invoke<typeof discover, ["probe.ts", Elsewhere]>,
+    "matches",
+    [
+      { alias: "Argument"; display: null },
+      { alias: "Configured"; display: null },
+      { alias: "AfterGiven"; display: "./given.html" },
+    ]
   >;
 }
