@@ -160,7 +160,7 @@ describe("assertions", () => {
     expect(printStatement(statement!)).toEqual([
       "const actual = add(4, 5);",
       "const expected = 9;",
-      'recordForDisplay(task, "./page.html", { actual, expected });',
+      'await recordArtifact(task, { type: "namespace-tests:display", page: "./page.html", actual: encode(actual), expected: encode(expected) });',
       "expect(actual).toEqual(expected);",
     ]);
     const [full] = lowerBody(cx, type("Full"), false);
@@ -168,7 +168,7 @@ describe("assertions", () => {
       display: { page: "./page.html", meta: { kind: "object" } },
     });
     expect(printStatement(full!)).toContain(
-      'recordForDisplay(task, "./page.html", { actual, expected, meta: { bins: 4 } });',
+      'await recordArtifact(task, { type: "namespace-tests:display", page: "./page.html", actual: encode(actual), expected: encode(expected), meta: encode({ bins: 4 }) });',
     );
   });
 

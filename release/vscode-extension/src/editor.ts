@@ -35,10 +35,11 @@ export const contentsOf = (uri: vscode.Uri) => {
   }
 };
 
-export const openBeside = async (file: string) => {
+export const openInActiveGroup = async (file: string) => {
   const document = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
   await vscode.window.showTextDocument(document, {
-    viewColumn: vscode.ViewColumn.Beside,
+    viewColumn: vscode.ViewColumn.Active,
+    preview: false,
   });
 };
 

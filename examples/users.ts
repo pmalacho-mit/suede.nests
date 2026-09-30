@@ -61,11 +61,7 @@ export class UserRepository {
   }
 }
 
-export const isAdmin = (u: User) => u.roles.includes("admin");
-export const hasEmailDomain = (domain: string) => (u: User) =>
-  u.email.endsWith(`@${domain}`);
-
-declare namespace Tests.UserRepository {
+declare namespace UserRepository {
   // A frozen clock so `createdAt` is deterministic.
   type FixedClock = Fixture<Clock, { now: typeof fixedNow }>;
   type Repo = Construct<typeof UserRepository, [FixedClock]>;
@@ -143,6 +139,12 @@ declare namespace Tests.UserRepository {
     "example.com"
   >;
 }
+
+export const isAdmin = (u: User) => u.roles.includes("admin");
+export const hasEmailDomain = (domain: string) => (u: User) =>
+  u.email.endsWith(`@${domain}`);
+
+
 
 // Test-only helper. Being in the module is fine: it is tiny and tree-shakes away when unused.
 export const fixedNow = () => "2026-01-01T00:00:00.000Z";

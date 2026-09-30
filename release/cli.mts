@@ -33,10 +33,6 @@ const DESCRIPTION = [
  */
 const parse = (argv: string[]) => {
   const args = main(argv, DESCRIPTION, [
-    cli.flag(
-      ["runtime", "r"],
-      "How the generated test imports the library's runtime helpers. Must match the plugin's, or nothing is read back from the cache.",
-    ),
     cli.flag("root", "Only look inside this namespace."),
     cli.flag(
       "served",
@@ -70,7 +66,6 @@ const parse = (argv: string[]) => {
     test: args[1],
     mode: args.collector ? "collector" : args.served ? "served" : "test",
     root: args.root,
-    runtime: args.runtime,
     clean: {
       extracted: args.clean || args["clean-extracted"],
       cache: args.clean || args["clean-cache"],
@@ -125,13 +120,10 @@ declare namespace parse {
   >;
 
   /** a flag's value is its own, not the next positional */
-  export type Runtime = Expect<
-    Invoke<
-      typeof parse,
-      [argv: ["src/a.ts", "a > B", "--runtime", "../vite-plugin/runtime.mts"]]
-    >,
+  export type Root = Expect<
+    Invoke<typeof parse, [argv: ["src/a.ts", "a > B", "--root", "Tests"]]>,
     "matches",
-    { test: "a > B"; runtime: "../vite-plugin/runtime.mts" }
+    { test: "a > B"; root: "Tests" }
   >;
 }
 
@@ -208,10 +200,10 @@ const cacheName = ({ mode, test }: Pick<Parsed, "mode" | "test">) =>
       ? nullPrefixed(`served ${test}`)
       : test!;
 
-const tryRetrieveFromCache = ({ file, mode, test, root, runtime }: Parsed) => {
+const tryRetrieveFromCache = ({ file, mode, test, root }: Parsed) => {
   if (!file || !fs.existsSync(file)) return { key: null, hit: null };
   const source = fs.readFileSync(path.resolve(file), "utf8");
-  const key = cacheKey(source, cacheName({ mode, test }), root, runtime);
+  const key = cacheKey(source, cacheName({ mode, test }), root, path.resolve(file));
   return { key, hit: read(key) };
 };
 

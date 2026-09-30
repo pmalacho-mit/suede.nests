@@ -1,0 +1,17 @@
+import { test, expect } from "vitest";
+
+function mean(xs: ArrayLike<number>): number {
+  if (xs.length === 0) return NaN;
+  return Array.from(xs).reduce((a, b) => a + b, 0) / xs.length;
+}
+
+function stddev(xs: readonly number[]): number {
+  const m = mean(xs);
+  return Math.sqrt(mean(xs.map((x) => (x - m) ** 2)));
+}
+
+test("stddev > Cases[2]", () => {
+  const actual = stddev([1, 2, 3, 4]);
+  const expected = 1.118033988749895;
+  expect(Math.abs(actual - expected)).toBeLessThanOrEqual(1e-12);
+});

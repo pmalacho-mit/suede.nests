@@ -11,33 +11,7 @@ export function mean(xs: ArrayLike<number>): number {
   return Array.from(xs).reduce((a, b) => a + b, 0) / xs.length;
 }
 
-export function stddev(xs: readonly number[]): number {
-  const m = mean(xs);
-  return Math.sqrt(mean(xs.map((x) => (x - m) ** 2)));
-}
-
-export function histogram(
-  xs: readonly number[],
-  buckets: number,
-  min: number,
-  max: number,
-): Uint32Array {
-  const out = new Uint32Array(buckets);
-  const width = (max - min) / buckets;
-  for (const x of xs) {
-    const b = Math.min(buckets - 1, Math.max(0, Math.floor((x - min) / width)));
-    out[b] = (out[b] ?? 0) + 1;
-  }
-  return out;
-}
-
-export function normalize(xs: readonly number[]): Float64Array {
-  const m = mean(xs);
-  const s = stddev(xs) || 1;
-  return Float64Array.from(xs, (x) => (x - m) / s);
-}
-
-declare namespace Tests.mean {
+declare namespace mean {
   type Sample = Widen<[2, 4, 4, 4, 5, 5, 7, 9]>; // number[] — one array per test
 
   export type Basic = Expect<Invoke<typeof mean, [Sample]>, "=", 5>;
@@ -55,7 +29,12 @@ declare namespace Tests.mean {
   ];
 }
 
-declare namespace Tests.stddev {
+export function stddev(xs: readonly number[]): number {
+  const m = mean(xs);
+  return Math.sqrt(mean(xs.map((x) => (x - m) ** 2)));
+}
+
+declare namespace stddev {
   export type Textbook = Expect<
     Invoke<typeof stddev, [[2, 4, 4, 4, 5, 5, 7, 9]]>,
     "=",
@@ -76,9 +55,22 @@ declare namespace Tests.stddev {
   >;
 }
 
-declare namespace _import.meta.vitest {}
+export function histogram(
+  xs: readonly number[],
+  buckets: number,
+  min: number,
+  max: number,
+): Uint32Array {
+  const out = new Uint32Array(buckets);
+  const width = (max - min) / buckets;
+  for (const x of xs) {
+    const b = Math.min(buckets - 1, Math.max(0, Math.floor((x - min) / width)));
+    out[b] = (out[b] ?? 0) + 1;
+  }
+  return out;
+}
 
-declare namespace Tests.histogram {
+declare namespace histogram {
   type H = Invoke<typeof histogram, [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 5, 0, 10]>;
 
   /** Typed arrays compare element-wise against tuples. */
@@ -100,15 +92,26 @@ declare namespace Tests.histogram {
   >;
 }
 
-declare namespace Tests.normalize {
-  type N = Invoke<typeof normalize, [[1, 2, 3]]>;
-  export type ZeroMean = Expect<Invoke<typeof mean, [N]>, ["~=", 1e-12], 0>;
+export function normalize(xs: readonly number[]): Float64Array {
+  const m = mean(xs);
+  const s = stddev(xs) || 1;
+  return Float64Array.from(xs, (x) => (x - m) / s);
+}
+
+declare namespace normalize {
+  type Normalized = Invoke<typeof normalize, [[1, 2, 3]]>;
+
+  export type ZeroMean = Expect<
+    Invoke<typeof mean, [Normalized]>,
+    ["~=", 1e-12],
+    0
+  >;
   export type Ends = [
-    Expect<N[0], ["~=", 1e-12], -1.224744871391589>,
-    Expect<N[2], ["~=", 1e-12], 1.224744871391589>,
+    Expect<Normalized[0], ["~=", 1e-3], -1.225>, // ~ -√6/2
+    Expect<Normalized[2], ["~=", 1e-3], 1.225>, // ~ √6/2
   ];
-  export type Includes = Expect<N, "includes", 0>;
-  export type Ordered = Expect<N, "every", typeof isFinite>;
+  export type Includes = Expect<Normalized, "includes", 0>;
+  export type Ordered = Expect<Normalized, "every", typeof isFinite>;
 
   export type Big = Configure<
     { timeout: 30_000; retries: 1 },

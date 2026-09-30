@@ -1,5 +1,5 @@
-import { test, expect } from "vitest";
-import { recordForDisplay } from "@namespace-tests/vite-plugin/runtime";
+import { test, expect, recordArtifact } from "vitest";
+import { encode } from "../release/vite-plugin/codec.mts";
 
 function histogram(
   xs: readonly number[],
@@ -17,9 +17,9 @@ function histogram(
 }
 
 /** Bar chart instead of a wall of numbers when this fails. */
-test("Tests > histogram > Visual", ({ task }) => {
+test("Tests > histogram > Visual", async ({ task }) => {
   const actual = Array.from(histogram([1, 1, 1, 2, 3, 5, 8, 13], 4, 0, 16));
   const expected = [5, 1, 1, 1];
-  recordForDisplay(task, "./fixtures/display-histogram.html", { actual, expected });
+  await recordArtifact(task, { type: "namespace-tests:display", page: "./fixtures/display-histogram.html", actual: encode(actual), expected: encode(expected) });
   expect(actual).toEqual(expected);
 });

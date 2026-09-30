@@ -1,0 +1,8 @@
+import { test, expect } from "vitest";
+
+/** And from the environment (the runner reads `.env` next to the test file if present). */
+test("UserRepository > Domain", () => {
+  const actual = (process.env["TEST_EMAIL_DOMAIN"] ?? "example.com");
+  const expected = "example.com";
+  expect(actual).toEqual(expected);
+});

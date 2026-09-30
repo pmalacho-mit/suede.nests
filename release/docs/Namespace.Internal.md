@@ -83,7 +83,7 @@ mistake is surfaced in the result type instead.)
 
 ## Modifier
 
-Marker so the runtime (and hover text) can identify DSL nodes by name.
+Marker so the printer (and hover text) can identify DSL nodes by name.
 
 ### Extends
 
@@ -121,7 +121,7 @@ Marker so the runtime (and hover text) can identify DSL nodes by name.
 
 ## ModuleMock
 
-Marker so the runtime (and hover text) can identify DSL nodes by name.
+Marker so the printer (and hover text) can identify DSL nodes by name.
 
 ### Extends
 
@@ -151,7 +151,7 @@ Marker so the runtime (and hover text) can identify DSL nodes by name.
 
 ## Node
 
-Marker so the runtime (and hover text) can identify DSL nodes by name.
+Marker so the printer (and hover text) can identify DSL nodes by name.
 
 ### Extended by
 
@@ -174,7 +174,7 @@ Marker so the runtime (and hover text) can identify DSL nodes by name.
 
 ## NothingNode
 
-Marker so the runtime (and hover text) can identify DSL nodes by name.
+Marker so the printer (and hover text) can identify DSL nodes by name.
 
 ### Extends
 
@@ -184,7 +184,7 @@ Marker so the runtime (and hover text) can identify DSL nodes by name.
 
 ## Sequence
 
-Marker so the runtime (and hover text) can identify DSL nodes by name.
+Marker so the printer (and hover text) can identify DSL nodes by name.
 
 ### Extends
 
@@ -214,7 +214,7 @@ Marker so the runtime (and hover text) can identify DSL nodes by name.
 
 ## SnapshotNode
 
-Marker so the runtime (and hover text) can identify DSL nodes by name.
+Marker so the printer (and hover text) can identify DSL nodes by name.
 
 ### Extends
 
@@ -236,7 +236,7 @@ Marker so the runtime (and hover text) can identify DSL nodes by name.
 
 ## TableNode
 
-Marker so the runtime (and hover text) can identify DSL nodes by name.
+Marker so the printer (and hover text) can identify DSL nodes by name.
 
 ### Extends
 
@@ -355,7 +355,7 @@ Conditions valid on arrays and typed arrays.
 > **ClassRef** = [`AnyCtor`](#anyctor) \| `Error`
 
 A class written as a value (`typeof RangeError`) or, for error classes, as a
-type (`RangeError`). The runtime resolves either spelling to the constructor.
+type (`RangeError`). The printer resolves either spelling to the constructor.
 For `"instanceOf"` on non-error classes the actual's own instance type is
 also accepted: `Expect<Repo, "instanceOf", UserRepository>`.
 
@@ -529,7 +529,7 @@ Ordering conditions; valid for numbers, bigints, strings and Dates.
 
 `T & never` is eagerly `never`, and `X | never` is `X`, so `X | Phantom<T>` is
 exactly `X` — but it "uses" `T`, which keeps parameters that exist purely
-for the runtime (`Args`, `Path`, …) from tripping `noUnusedParameters`.
+for the printer (`Args`, `Path`, …) from tripping `noUnusedParameters`.
 
 ### Type Parameters
 

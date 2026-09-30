@@ -3,8 +3,6 @@ import { isDslModule } from "../../workspace.mts";
 
 import type { Binding, Expr, ModuleMock } from "./ir.mts";
 
-export const RUNTIME_MODULE = "@namespace-tests/vite-plugin/runtime";
-
 export type Warning = {
   line: number;
   column: number;
@@ -50,11 +48,7 @@ const valueBinding = (declaration: ts.Declaration, local: string) => {
   return null;
 };
 
-export const createEmitContext = (
-  program: ts.Program,
-  source: ts.SourceFile,
-  runtime = RUNTIME_MODULE,
-) => {
+export const createEmitContext = (program: ts.Program, source: ts.SourceFile) => {
   const checker = program.getTypeChecker();
   const warnings: Warning[] = [];
   // a node is asked about several times over, so each answer is kept
@@ -65,7 +59,6 @@ export const createEmitContext = (
     checker,
     source,
     warnings,
-    runtime,
     test: freshTestState(),
     resetTest() {
       cx.test = freshTestState();

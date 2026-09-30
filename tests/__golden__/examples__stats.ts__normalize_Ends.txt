@@ -1,0 +1,27 @@
+import { test, expect } from "vitest";
+
+function mean(xs: ArrayLike<number>): number {
+  if (xs.length === 0) return NaN;
+  return Array.from(xs).reduce((a, b) => a + b, 0) / xs.length;
+}
+
+function stddev(xs: readonly number[]): number {
+  const m = mean(xs);
+  return Math.sqrt(mean(xs.map((x) => (x - m) ** 2)));
+}
+
+function normalize(xs: readonly number[]): Float64Array {
+  const m = mean(xs);
+  const s = stddev(xs) || 1;
+  return Float64Array.from(xs, (x) => (x - m) / s);
+}
+
+test("normalize > Ends", () => {
+  const Normalized = normalize([1, 2, 3]);
+  const actual1 = Normalized[0]!;
+  const expected1 = -1.225;
+  expect.soft(Math.abs(actual1 - expected1)).toBeLessThanOrEqual(1e-3);
+  const actual2 = Normalized[2]!;
+  const expected2 = 1.225;
+  expect.soft(Math.abs(actual2 - expected2)).toBeLessThanOrEqual(1e-3);
+});

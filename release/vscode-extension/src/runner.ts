@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 
 import { answersTo } from "../../test-names.mts";
 import { outcomeOf, type Outcome } from "./outcome.js";
-import { shownOnPage, vitest, type Report } from "./vitest.js";
+import { shownOnPage, vitest, type ResultRecord } from "./vitest.js";
 
 import type { DisplayPanels } from "./panels.js";
 import type { TestTree } from "./tree.js";
@@ -40,16 +40,16 @@ export function testRunner({ controller, output, tree, panels, lensesChanged }: 
     }
   };
 
-  const outcomeFor = (uri: vscode.Uri, item: vscode.TestItem, report: Report, duration: number): Outcome => {
-    const assertions = report.assertions.filter((a) => answersTo(a.title, item.label));
+  const outcomeFor = (uri: vscode.Uri, item: vscode.TestItem, report: ResultRecord[], duration: number): Outcome => {
+    const records = report.filter((r) => answersTo(r.name, item.label));
     // Vitest said nothing of this test: the project's config does not collect its file
-    if (!assertions.length) {
-      if (!report.assertions.length) output.appendLine(notCollected(uri));
+    if (!records.length) {
+      if (!report.length) output.appendLine(notCollected(uri));
       return { state: "skipped" };
     }
-    const shown = shownOnPage(report, assertions);
+    const shown = shownOnPage(records);
     if (shown) panels.record(item.id, shown);
-    return outcomeOf(report, assertions, duration);
+    return outcomeOf(records, duration);
   };
 
   const run = async (uri: vscode.Uri, only?: vscode.TestItem) => {

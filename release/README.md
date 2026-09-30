@@ -3,9 +3,10 @@
 
 # Namespace Tests
 
-Tests written as TypeScript types, beside the code they test, run by Vitest —
-and erased from every build, because a `declare namespace` is a type and nothing
-else:
+Tests written as TypeScript types, beside the code they test, and run by Vitest.
+A test is one declaration that reads as the claim it makes — call `add` with 4
+and 5, expect 9 — so the namespace under a function reads as a list of what it
+does:
 
 ```ts
 import type { Expect, Invoke } from "./<path-to-library>/dsl.import.meta.vitest.ts";
@@ -76,8 +77,9 @@ That module is named explicitly so that, when you import it, the string
 `import.meta.vitest` appears in your file. Vitest decides which files hold
 tests by keeping the ones whose raw text contains that string — its
 [in-source testing](https://vitest.dev/guide/in-source.html) — so importing the
-DSL is what makes your tests findable. This library is a way to write in-source
-tests that are guaranteed never to reach transpiled code.
+DSL is what makes your tests findable. What this library adds to in-source
+testing is the form of a test: a type that states its claim, in place of a block
+of `it` and `expect` calls.
 
 Two consequences worth knowing:
 
@@ -330,6 +332,11 @@ test gets a fresh copy of the module under test — and of that module's
 first-party imports, which are forked per test so state cannot leak from one
 test to the next.
 
+The plugin only runs under Vitest — `vite build` skips it — so no collector
+reaches a build, and the namespaces are erased with the rest of your types. A
+value you declare outside a namespace for tests to use is ordinary code, and a
+build treats it like any other export.
+
 Packages are shared, since Vitest hands those to Node. If some first-party
 module of yours is _meant_ to be singular — a connection pool, a registry —
 name it and every test will share one instance:
@@ -376,15 +383,11 @@ the file: the library's `cli.mts` answers from the cache without loading a
 compiler at all. It only does the work when nothing has run yet.
 
 ```
-node <path-to-library>/cli.mts src/counter.ts "Counter > Chainable" [--runtime <spec>] [--root <ns>]
+node <path-to-library>/cli.mts src/counter.ts "Counter > Chainable" [--root <ns>]
 node <path-to-library>/cli.mts src/counter.ts "Counter > Chainable" --served
 node <path-to-library>/cli.mts src/counter.ts --collector
 node <path-to-library>/cli.mts --help
 ```
-
-`--runtime` is how the generated test imports the library's runtime helpers. It
-has to match what the plugin uses, or the answer is printed afresh rather than
-read back — the editor passes it for you.
 
 What you get is the test, not quite what a run serves: a run also gives each
 test its own copy of the first-party modules it reaches, by tagging their
@@ -401,7 +404,7 @@ library's own folder**.
 ```
 .derived/
 ├── diagnostics.json   what the printer could not turn into a value, and the mistakes it explains
-├── results.json       what the reporter saw, so a failure can be explained
+├── results.json       what the reporter saw: each failure's diff, and what a display page shows
 └── cache/             only ever an optimisation; delete it freely
     ├── minimal/       tests the printer has already written out
     └── node/          the compiled form of the modules a command loads

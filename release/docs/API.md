@@ -133,7 +133,7 @@ Expect<Pixels, "=", ExpectedPixels, "./display-image.html">
 ```
 
 `Expected` is constrained by `Actual` and `Condition` together, so mismatched
-shapes are compile errors — the IDE tells you before the runtime does.
+shapes are compile errors — the IDE tells you before the test runs.
 
 ### Type Parameters
 
@@ -194,7 +194,7 @@ export type Increments = ExpectGiven<Call<Counter, "increment", []>, Counter["co
 > **Fixture**\<`T`, `Initial`\> = `T` \| [`Phantom`](Namespace.Internal.md#phantom)\<`Initial`\>
 
 A typed fixture: declares the *type* the rest of the test sees and the
-literal *initial value* the runtime materializes. Solves the problem that a
+literal *initial value* the test materializes. Solves the problem that a
 literal `{ name: "parker" }` has type `{ name: "parker" }`, which would
 reject an expectation of `"olivia"` after a mutation.
 
@@ -461,7 +461,7 @@ export type Seeded = SkipIfNotFound<
 
 > **Snapshot**\<`Name`\> = [`SnapshotNode`](Namespace.Internal.md#snapshotnode)\<`Name`\>
 
-A stored expected value. On first run the runtime writes the actual value to
+A stored expected value. On first run the test writes the actual value to
 `__snapshots__/<file>.<TestName>[.<Name>].snap` next to the test file; on
 later runs it compares against that file. Updating snapshots is a runner
 command, not a code change.
@@ -563,7 +563,7 @@ export type Emoji = Todo<"decide whether emoji should be stripped or translitera
 > **Widen**\<`T`\> = `T` *extends* `string` ? `string` : `T` *extends* `number` ? `number` : `T` *extends* `boolean` ? `boolean` : `T` *extends* `bigint` ? `bigint` : `T` *extends* `symbol` ? `symbol` : `T` *extends* readonly infer U[] ? [`Widen`](#widen)\<`U`\>[] : `T` *extends* `object` ? `{ -readonly [K in keyof T]: Widen<T[K]> }` : `T`
 
 Widen literal types to their primitive base (`"parker"` → `string`,
-`[1, 2]` → `number[]`) while the runtime still materializes the literal.
+`[1, 2]` → `number[]`) while the test still materializes the literal.
 Handy when a fixture's shape is obvious and you don't want to spell it out.
 
 ```ts

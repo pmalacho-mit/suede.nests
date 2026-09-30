@@ -15,7 +15,7 @@ import type { EmittedTest } from "./print.mts";
 export type { EmitContext, EmitInput, Line, Warning } from "./context.mts";
 export type { EmittedTest, Needs } from "./print.mts";
 export * from "./ir.mts";
-export { createEmitContext, RUNTIME_MODULE } from "./context.mts";
+export { createEmitContext } from "./context.mts";
 export {
   allNeeds,
   headerLines,
@@ -47,12 +47,8 @@ export type Emitted = {
   warnings: Warning[];
 };
 
-export function emitTests(
-  { program, source }: EmitInput,
-  root?: string,
-  runtime?: string,
-): Emitted {
-  const cx = createEmitContext(program, source, runtime);
+export function emitTests({ program, source }: EmitInput, root?: string): Emitted {
+  const cx = createEmitContext(program, source);
   const tests: EmittedTest[] = [];
   const aliases: ts.TypeAliasDeclaration[] = [];
   for (const { segs, body } of namespaces(source)) {
@@ -65,7 +61,7 @@ export function emitTests(
   }
   // written last: only once every test has said what it needs
   const header = tests.length
-    ? headerLines(allNeeds(tests.map((t) => t.needs)), cx.runtime)
+    ? headerLines(allNeeds(tests.map((t) => t.needs)), source.fileName)
     : [];
   return { header, tests, warnings: [...cx.warnings, ...explainedMistakes(cx, aliases)] };
 }

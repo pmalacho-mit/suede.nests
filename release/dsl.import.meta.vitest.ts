@@ -36,10 +36,10 @@
  * 3. JSDoc on a test alias becomes its human-readable description.
  *
  * ───────────────────────────────────────────────────────────────────────────
- * Evaluation model (what the runtime does with these types)
+ * Evaluation model (what the plugin does with these types)
  * ───────────────────────────────────────────────────────────────────────────
  *
- * The runtime is a *printer*: it walks the syntax of each test alias (not its
+ * The plugin is a *printer*: it walks the syntax of each test alias (not its
  * resolved type, so it sees intent — `Invoke<...>` — rather than result —
  * `number`) and prints ordinary Vitest code, which Vitest then runs. Type
  * literals print as the equivalent value literals; DSL nodes print as calls
@@ -110,7 +110,7 @@ import type { MockedFunction } from "vitest";
 export declare namespace Internal {
   const NT: unique symbol;
 
-  /** Marker so the runtime (and hover text) can identify DSL nodes by name. */
+  /** Marker so the printer (and hover text) can identify DSL nodes by name. */
   interface Node<Kind extends string> {
     /** @hidden */
     readonly [NT]: Kind;
@@ -123,7 +123,7 @@ export declare namespace Internal {
   /**
    * `T & never` is eagerly `never`, and `X | never` is `X`, so `X | Phantom<T>` is
    * exactly `X` — but it "uses" `T`, which keeps parameters that exist purely
-   * for the runtime (`Args`, `Path`, …) from tripping `noUnusedParameters`.
+   * for the printer (`Args`, `Path`, …) from tripping `noUnusedParameters`.
    */
   type Phantom<T> = T & never;
 }
@@ -244,7 +244,7 @@ export declare namespace Internal {
 
 /**
  * A typed fixture: declares the *type* the rest of the test sees and the
- * literal *initial value* the runtime materializes. Solves the problem that a
+ * literal *initial value* the test materializes. Solves the problem that a
  * literal `{ name: "parker" }` has type `{ name: "parker" }`, which would
  * reject an expectation of `"olivia"` after a mutation.
  *
@@ -279,7 +279,7 @@ export declare namespace Internal {
 
 /**
  * Widen literal types to their primitive base (`"parker"` → `string`,
- * `[1, 2]` → `number[]`) while the runtime still materializes the literal.
+ * `[1, 2]` → `number[]`) while the test still materializes the literal.
  * Handy when a fixture's shape is obvious and you don't want to spell it out.
  *
  * ```ts
@@ -353,7 +353,7 @@ export type Env<
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * A stored expected value. On first run the runtime writes the actual value to
+ * A stored expected value. On first run the test writes the actual value to
  * `__snapshots__/<file>.<TestName>[.<Name>].snap` next to the test file; on
  * later runs it compares against that file. Updating snapshots is a runner
  * command, not a code change.
@@ -401,7 +401,7 @@ export declare namespace Internal {
  * ```
  *
  * `Expected` is constrained by `Actual` and `Condition` together, so mismatched
- * shapes are compile errors — the IDE tells you before the runtime does.
+ * shapes are compile errors — the IDE tells you before the test runs.
  */
 export type Expect<
   Actual,
@@ -553,7 +553,7 @@ export declare namespace Internal {
 
   /**
    * A class written as a value (`typeof RangeError`) or, for error classes, as a
-   * type (`RangeError`). The runtime resolves either spelling to the constructor.
+   * type (`RangeError`). The printer resolves either spelling to the constructor.
    * For `"instanceOf"` on non-error classes the actual's own instance type is
    * also accepted: `Expect<Repo, "instanceOf", UserRepository>`.
    */

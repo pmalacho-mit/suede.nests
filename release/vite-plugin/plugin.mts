@@ -9,8 +9,7 @@ import { SUFFIX, collected, collectorLines, idFor } from "./collector.mts";
 import { SUFFIX as EXTRACTED } from "../extract.mts";
 import { FORK, fork, forkOf } from "./fork.mts";
 import { configFor, emittedFor, minimalFor } from "./minimal.mts";
-import { importPath, relativeTo, runtimeSpecifier } from "./runtime-specifier.mts";
-
+import { relativeTo } from "./paths.mts";
 import type { Plugin, ViteUserConfig } from "vitest/config";
 import type { SourceMapSegment } from "@jridgewell/sourcemap-codec";
 import type { Line } from "./emit/context.mts";
@@ -30,8 +29,6 @@ export type Options = {
   extracted?: string | false;
   /** Discover test files by scanning cwd. */
   scan?: boolean;
-  /** Absolute path of the runtime generated code imports from. */
-  runtimeFile?: string;
   /** Also discover the library's own tests, which vendoring it must not add to a suite. */
   _scanSelf?: boolean;
   /** Globs, relative to the project root, of modules every test shares instead of getting its own copy. */
@@ -155,7 +152,12 @@ function languageService(cwd: string, tsconfig: string) {
   };
 }
 
-type Discovery = { cwd: string; exclude: string[]; marker: RegExp; skip: string | null };
+type Discovery = {
+  cwd: string;
+  exclude: string[];
+  marker: RegExp;
+  skip: string | null;
+};
 
 // `src/fixtures/**` should stop the walk at `src/fixtures`, not only reject what is under it
 const asDirectories = (globs: string[]) =>
@@ -189,20 +191,15 @@ function testModuleFinder({ cwd, exclude, marker, skip }: Discovery) {
 
 const library = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
-const bundledRuntime = fileURLToPath(new URL("./runtime.mts", import.meta.url));
-
-const runtimeImporter = (runtimeFile?: string) => (importer: string) =>
-  runtimeFile
-    ? importPath(importer, runtimeFile)
-    : runtimeSpecifier(bundledRuntime, importer);
-
 const VITEST_DEFAULT_INCLUDE = ["**/*.{test,spec}.?(c|m)[jt]s?(x)"];
 
 // Vite appends a plugin's `include` to the user's, so it replaces only Vitest's default
 const includeFor = (extracted: string | false, userInclude: unknown) => {
   const collectsNothing = Array.isArray(userInclude) && !userInclude.length;
   if (!extracted || collectsNothing) return {};
-  return { include: userInclude ? [extracted] : [...VITEST_DEFAULT_INCLUDE, extracted] };
+  return {
+    include: userInclude ? [extracted] : [...VITEST_DEFAULT_INCLUDE, extracted],
+  };
 };
 
 // each collector import maps to the line of the `export type` it runs
@@ -239,7 +236,6 @@ export default function namespaceTests({
   include = [],
   extracted = `**/*${EXTRACTED}`,
   scan = true,
-  runtimeFile,
   _scanSelf: scanSelf = false,
   noIsolateModuleImport = [],
 }: Options = {}): Plugin {
@@ -253,17 +249,21 @@ export default function namespaceTests({
     marker,
     skip: scanSelf ? null : library,
   });
-  const runtimeFor = runtimeImporter(runtimeFile);
   const shared = picomatch(noIsolateModuleImport);
   const isShared = (file: string) => shared(relativeTo(cwd, file));
   const generated = new Map<string, { source: string; test: string }>();
   let only: RegExp | null = null;
 
-  const report = (id: string, warnings: Warning[], warn: (message: string) => void) => {
+  const report = (
+    id: string,
+    warnings: Warning[],
+    warn: (message: string) => void,
+  ) => {
     const rel = path.relative(cwd, id);
     diagnostics[rel] = warnings;
     writeDiagnostics(diagnostics);
-    for (const w of warnings) warn(`${rel}:${w.line + 1}:${w.column + 1} ${w.message}`);
+    for (const w of warnings)
+      warn(`${rel}:${w.line + 1}:${w.column + 1} ${w.message}`);
   };
 
   const register = (source: string, tests: { name: string; line: number }[]) =>
@@ -277,10 +277,14 @@ export default function namespaceTests({
 
   return {
     name: "namespace-tests",
+    // Vitest always serves; a build must never receive the collector
+    apply: "serve",
     // before vite:esbuild/oxc strips the namespaces
     enforce: "pre",
     config(userConfig: ViteUserConfig): ViteUserConfig {
-      const files = scan ? [...testModulesUnder(cwd)].map((f) => path.relative(cwd, f)) : [];
+      const files = scan
+        ? [...testModulesUnder(cwd)].map((f) => path.relative(cwd, f))
+        : [];
       return {
         test: {
           includeSource: [...files, ...include],
@@ -300,7 +304,9 @@ export default function namespaceTests({
       if (generated.has(id)) return id;
       const forked = forkOf(id);
       if (!forked) return null;
-      const resolved = await this.resolve(forked.file, importer, { skipSelf: true });
+      const resolved = await this.resolve(forked.file, importer, {
+        skipSelf: true,
+      });
       if (!resolved) return null;
       const file = withoutQuery(resolved.id);
       if (isShared(file)) return resolved.id;
@@ -312,12 +318,10 @@ export default function namespaceTests({
       const entry = generated.get(id);
       if (!entry) return null;
       const input = service.inputFor(entry.source);
-      const runtime = runtimeFor(id);
       return fork(
         minimalFor(entry.source, entry.test, {
           root,
           tsconfig,
-          ...(runtime ? { runtime } : {}),
           ...(input ? { input } : {}),
         }),
         path.basename(id, SUFFIX),
@@ -338,7 +342,7 @@ export default function namespaceTests({
       if (!isTypeScript(id) || !marker.test(code)) return null;
       const input = service.inputAsWritten(id, code);
       if (!input) return null;
-      const { warnings, tests } = emittedFor(input, root, runtimeFor(id));
+      const { warnings, tests } = emittedFor(input, root);
       report(id, warnings, (message) => this.warn(message));
 
       const imports = register(id, tests);

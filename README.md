@@ -55,8 +55,7 @@ Two consequences worth knowing:
 
 ## How a test is run
 
-Nothing is written to disk. For a module with tests, the plugin appends a
-collector:
+Nothing is written to disk. For a module with tests, the plugin appends a collector:
 
 ```ts
 if (import.meta.vitest) {
@@ -69,6 +68,11 @@ needs, pruned of everything it does not, followed by the test itself. So every
 test gets a fresh copy of the module under test — and of that module's
 first-party imports, which are forked per test so state cannot leak from one
 test to the next.
+
+The plugin only runs under Vitest — `vite build` skips it — so no collector
+reaches a build, and the namespaces are erased with the rest of your types. A
+value you declare outside a namespace for tests to use is ordinary code, and a
+build treats it like any other export.
 
 Packages are shared, since Vitest hands those to Node. If some first-party
 module of yours is *meant* to be singular — a connection pool, a registry —
