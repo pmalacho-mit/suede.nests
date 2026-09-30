@@ -1,14 +1,14 @@
-// Stands in for "typescript" in the bundle: see the alias in build.mjs.
+// Stands in for "@typescript/typescript6" in the bundle: see the alias in build.mjs.
 import { createRequire } from "node:module";
 import path from "node:path";
 
-import type TS from "typescript";
+import type TS from "@typescript/typescript6";
 import type { Expect, Invoke } from "../../dsl.import.meta.vitest.ts";
 
 const resolveFrom = (dir: string): typeof TS | null => {
   try {
     const require = createRequire(path.join(dir, "noop.js"));
-    return require(require.resolve("typescript")) as typeof TS;
+    return require(require.resolve("@typescript/typescript6")) as typeof TS;
   } catch {
     return null;
   }

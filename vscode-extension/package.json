@@ -2,7 +2,7 @@
   "name": "namespace-tests",
   "displayName": "Namespace Tests",
   "description": "Type-level tests in the editor: run them from the line you wrote them on.",
-  "version": "0.28.2",
+  "version": "0.28.5",
   "publisher": "pmalacho-mit",
   "engines": {
     "vscode": "^1.88.0"
@@ -114,10 +114,8 @@
     "install-extension": "node install.mjs"
   },
   "devDependencies": {
-    "@types/node": "^26.6.1",
-    "@types/vscode": "^1.88.0",
-    "esbuild": "^0.25.0",
-    "typescript": "^5.5.0"
+    "esbuild": "^0.28.2",
+    "@types/vscode": "~1.88.0"
   },
   "repository": {
     "type": "git",

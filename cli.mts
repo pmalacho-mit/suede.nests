@@ -253,10 +253,8 @@ async function print(parsed: Parsed) {
   }
 }
 
-export async function run(args: string[]) {
-  const parsed = parse(args);
+if (cli.entry(import.meta.url)) {
+  const parsed = parse(process.argv.slice(2));
   if (wantsCleaning(parsed)) cleanUp(parsed);
   else await print(parsed);
 }
-
-if (cli.entry(import.meta.url)) await run(process.argv.slice(2));
