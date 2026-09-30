@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import ts from "typescript";
+import ts from "@typescript/typescript6";
 import path from "node:path";
 import fs from "node:fs";
 import { cacheKey, read, write } from "./cache.mts";

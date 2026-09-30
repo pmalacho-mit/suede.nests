@@ -21,7 +21,7 @@ await build({
   format: "cjs",
   external: ["vscode"],
   // parse with the workspace's own TypeScript, the one the plugin runs
-  alias: { typescript: "./src/typescript.ts" },
+  alias: { "@typescript/typescript6": "./src/typescript.ts" },
   sourcemap: true,
   minify: process.argv.includes("--minify"),
   logLevel: "info",

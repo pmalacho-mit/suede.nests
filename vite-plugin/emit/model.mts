@@ -1,4 +1,4 @@
-import ts from "typescript";
+import ts from "@typescript/typescript6";
 
 import { isFirstPartySpecifier } from "../fork.mts";
 import { awaits } from "./ir.mts";

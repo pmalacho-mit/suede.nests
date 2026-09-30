@@ -11,8 +11,12 @@
 Call a method on a materialized value (typically a `Construct` alias or a
 `Fixture`). Evaluates to the (awaited) return type of the method.
 
+**STRONGLY RECOMMENDED** to use named tuples on `Args` for clarity.
+
 ```ts
-type Counter = Construct<typeof Counter, [10]>;
+type Counter = Construct<typeof Counter, [start: 10]>;
+type Stored = Call<Store, "put", [key: "k", value: 1]>;
+
 export type Increments = Given<
   Call<Counter, "increment", []>,
   Expect<Counter["count"], "=", 11>
@@ -44,7 +48,7 @@ Apply a `Config` to a whole test (or tuple of tests).
 ```ts
 export type Big = Configure<
   { timeout: 30_000; retries: 1 },
-  Expect<Invoke<typeof normalize, [Invoke<typeof range, [1_000_000]>]>["length"], "=", 1_000_000>
+  Expect<Invoke<typeof normalize, [xs: Invoke<typeof range, [n: 1_000_000]>]>["length"], "=", 1_000_000>
 >;
 ```
 
@@ -67,8 +71,10 @@ export type Big = Configure<
 Instantiate a class with literal arguments. Evaluates to the instance type.
 Bind it to an alias to keep a handle on the instance:
 
+**STRONGLY RECOMMENDED** to use named tuples on `Args` for clarity.
+
 ```ts
-type Counter = Construct<typeof Counter, [10]>;
+type Counter = Construct<typeof Counter, [start: 10]>;
 
 export type StartsAt = Expect<Counter["count"], "=", 10>;
 ```
@@ -96,7 +102,7 @@ with no default fail with a clear message.
 ```ts
 type Domain = Env<"TEST_EMAIL_DOMAIN", "example.com">;
 
-export type Invites = Expect<Invoke<typeof inviteAddress, ["ada", Domain]>, "endsWith", "example.com">;
+export type Invites = Expect<Invoke<typeof inviteAddress, [user: "ada", domain: Domain]>, "endsWith", "example.com">;
 ```
 
 ### Type Parameters
@@ -118,10 +124,10 @@ export type Invites = Expect<Invoke<typeof inviteAddress, ["ada", Domain]>, "end
 The core assertion.
 
 ```ts
-Expect<Invoke<typeof add, [4, 5]>, "=", 9>
-Expect<Invoke<typeof greet, ["Ada"]>, "startsWith", "Hello">
-Expect<Invoke<typeof sqrt, [2]>, ["~=", 1e-12], 1.4142135623730951>
-Expect<Invoke<typeof parse, ["{"]>, "throws", SyntaxError>
+Expect<Invoke<typeof add, [a: 4, b: 5]>, "=", 9>
+Expect<Invoke<typeof greet, [name: "Ada"]>, "startsWith", "Hello">
+Expect<Invoke<typeof sqrt, [x: 2]>, ["~=", 1e-12], 1.4142135623730951>
+Expect<Invoke<typeof parse, [source: "{"]>, "throws", SyntaxError>
 Expect<Invoke<typeof list, []>, "isEmpty">
 Expect<Pixels, "=", ExpectedPixels, "./display-image.html">
 ```
@@ -196,7 +202,7 @@ reject an expectation of `"olivia"` after a mutation.
 type Container = Fixture<{ name: string }, { name: "parker" }>;
 
 export type Rename = Given<
-  Invoke<typeof setName, [Container, "olivia"]>,
+  Invoke<typeof setName, [container: Container, name: "olivia"]>,
   Expect<Container["name"], "=", "olivia">
 >;
 ```
@@ -226,7 +232,7 @@ type Png = FromFile<"./fixtures/logo.png", "bytes">;      // Uint8Array
 type Csv = FromFile<"./fixtures/rows.csv">;                // string
 type Cfg = FromFile<"./fixtures/config.json", "json", AppConfig>;
 
-export type Parses = Expect<Invoke<typeof parseCsv, [Csv]>, "isNotEmpty">;
+export type Parses = Expect<Invoke<typeof parseCsv, [text: Csv]>, "isNotEmpty">;
 ```
 
 ### Type Parameters
@@ -254,17 +260,17 @@ purely for their side effects), then evaluate `Then`.
 
 ```ts
 export type Rename = Given<
-  Invoke<typeof setName, [Container, "olivia"]>,
+  Invoke<typeof setName, [container: Container, name: "olivia"]>,
   Expect<Container["name"], "=", "olivia">
 >;
 
 export type Lifecycle = Given<
   [
      Call<Store, "open", []>,
-     Call<Store, "put", ["k", 1]>
+     Call<Store, "put", [key: "k", value: 1]>
   ],
   [
-     Expect<Call<Store, "get", ["k"]>, "=", 1>,
+     Expect<Call<Store, "get", [key: "k"]>, "=", 1>,
      Expect<Store["size"], "=", 1>
   ]
 >;
@@ -295,7 +301,7 @@ type Sum = Invoke<typeof add, [a: 4, b: 5]>;               // number  ⇒ 9 at r
 type Name = Invoke<typeof user.getName, []>;         // `this` is `user`
 type Doubled = Invoke<typeof map, [arr: [1, 2], fn: typeof double]>; // functions are literals too
 
-export type Simple = Expect<Invoke<typeof add, [4, 5]>, "=", 9>;
+export type Simple = Expect<Invoke<typeof add, [a: 4, b: 5]>, "=", 9>;
 ```
 
 ### Type Parameters
@@ -328,12 +334,12 @@ object, or a factory that is handed `importOriginal`, as `vi.mock`'s is.
 ```ts
 export type Faked = Given<
   Mock<"./rates.ts", typeof fakeRates>,
-  Expect<Invoke<typeof inEuros, [10]>, "=", 20>
+  Expect<Invoke<typeof inEuros, [dollars: 10]>, "=", 20>
 >;
 
 export type Stubbed = Given<
-  [Mock<"./rates.ts">, Call<Mocked<typeof exchangeRate>, "mockReturnValue", [2]>],
-  Expect<Invoke<typeof inEuros, [10]>, "=", 20>
+  [Mock<"./rates.ts">, Call<Mocked<typeof exchangeRate>, "mockReturnValue", [value: 2]>],
+  Expect<Invoke<typeof inEuros, [dollars: 10]>, "=", 20>
 >;
 ```
 
@@ -357,8 +363,8 @@ A function a `Mock` replaced, typed as the `vi.fn()` it now is.
 
 ```ts
 export type Stubbed = Given<
-  [Mock<"./rates.ts">, Call<Mocked<typeof exchangeRate>, "mockReturnValue", [2]>],
-  Expect<Invoke<typeof inEuros, [10]>, "=", 20>
+  [Mock<"./rates.ts">, Call<Mocked<typeof exchangeRate>, "mockReturnValue", [value: 2]>],
+  Expect<Invoke<typeof inEuros, [dollars: 10]>, "=", 20>
 >;
 ```
 
@@ -390,7 +396,7 @@ export type Ready = Expect<Invoke<typeof isReady, []>, "truthy", Nothing, { time
 Run only tests marked `Only` (when any exist in the workspace/file).
 
 ```ts
-export type Focus = Only<Expect<Invoke<typeof add, [4, 5]>, "=", 9>>;
+export type Focus = Only<Expect<Invoke<typeof add, [a: 4, b: 5]>, "=", 9>>;
 ```
 
 ### Type Parameters
@@ -435,7 +441,7 @@ package is installed.
 ```ts
 export type Seeded = SkipIfNotFound<
   "./fixtures/users.json",
-  Expect<Invoke<typeof load, [FromFile<"./fixtures/users.json", "json">]>, "isNotEmpty">
+  Expect<Invoke<typeof load, [users: FromFile<"./fixtures/users.json", "json">]>, "isNotEmpty">
 >;
 ```
 
@@ -461,10 +467,10 @@ later runs it compares against that file. Updating snapshots is a runner
 command, not a code change.
 
 ```ts
-export type Renders = Expect<Invoke<typeof render, [Tree]>, "=", Snapshot>;
+export type Renders = Expect<Invoke<typeof render, [tree: Tree]>, "=", Snapshot>;
 export type Both = [
-  Expect<Invoke<typeof render, [Tree]>, "=", Snapshot<"html">>,
-  Expect<Invoke<typeof toText, [Tree]>, "=", Snapshot<"text">>,
+  Expect<Invoke<typeof render, [tree: Tree]>, "=", Snapshot<"html">>,
+  Expect<Invoke<typeof toText, [tree: Tree]>, "=", Snapshot<"text">>,
 ];
 ```
 
@@ -483,13 +489,14 @@ export type Both = [
 Parameterised tests: call `F` once per row and check the result.
 Each row is reported as its own case (`Tests > add > Table[2]`).
 
-**STRONGLY RECOMMENDED** to use named tuples for clarity.
+**STRONGLY RECOMMENDED** to use named tuples for clarity: name each row's
+elements, and name the arguments inside `args` as the function names its parameters.
 
 ```ts
 export type Cases = Table<typeof add, [
-  [args: [1, 2], expected: 3],
-  [args: [a: -1, b: 1], expected: 0], // even more names!
-  [args: [0.1, 0.2], condition: ["~=", 1e-9], expected: 0.3],
+  [args: [a: 1, b: 2], expected: 3],
+  [args: [a: -1, b: 1], expected: 0],
+  [args: [a: 0.1, b: 0.2], condition: ["~=", 1e-9], expected: 0.3],
 ]>;
 ```
 
@@ -514,10 +521,10 @@ error class, a message substring, or an object of the fields that must match.
 
 ```ts
 export type Errors = [
-  Throws<Invoke<typeof parse, ["(1 + 2"]>, ParseError>,
-  Throws<Invoke<typeof parse, ["1 +"]>, { instanceOf: ParseError; matches: "unexpected .*end of input" }>,
-  Throws<Invoke<typeof parse, ["1 2"]>, "trailing">,
-  Throws<Invoke<typeof parse, [""]>>, // any throw at all
+  Throws<Invoke<typeof parse, [source: "(1 + 2"]>, ParseError>,
+  Throws<Invoke<typeof parse, [source: "1 +"]>, { instanceOf: ParseError; matches: "unexpected .*end of input" }>,
+  Throws<Invoke<typeof parse, [source: "1 2"]>, "trailing">,
+  Throws<Invoke<typeof parse, [source: ""]>>, // any throw at all
 ];
 ```
 
@@ -562,7 +569,7 @@ Handy when a fixture's shape is obvious and you don't want to spell it out.
 ```ts
 type Sample = Widen<[2, 4, 4, 4, 5, 5, 7, 9]>; // number[], materialized as written
 
-export type Mean = Expect<Invoke<typeof mean, [Sample]>, "=", 5>;
+export type Mean = Expect<Invoke<typeof mean, [xs: Sample]>, "=", 5>;
 ```
 
 ### Type Parameters
