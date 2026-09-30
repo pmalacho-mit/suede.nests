@@ -7,7 +7,7 @@ import {
   closeEditorsFor,
   contentsOf,
   folderOf,
-  openBeside,
+  openInActiveGroup,
   orComplain,
   quoteArg,
 } from "./editor.js";
@@ -31,7 +31,7 @@ const mayOverwrite = async (target: string) => {
     "Open it",
     "Overwrite",
   );
-  if (answer === "Open it") await openBeside(target);
+  if (answer === "Open it") await openInActiveGroup(target);
   return answer === "Overwrite";
 };
 
@@ -53,7 +53,7 @@ export async function extractTest(item: LocatedItem, output: vscode.OutputChanne
   );
   if (body === null) return;
   fs.writeFileSync(target, extract(vscode.workspace.asRelativePath(item.uri), item.label, body));
-  await openBeside(target);
+  await openInActiveGroup(target);
 }
 
 export function runExtracted(uri: vscode.Uri) {

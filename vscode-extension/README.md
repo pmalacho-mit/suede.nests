@@ -2,9 +2,14 @@
 
 Type-level tests in the editor.
 
-Every `export type X = Expect<…>` inside a `declare namespace Tests…` block
-shows up as a test: in the Test Explorer, in the gutter, and as a lens above the
-line you wrote it on. Running one runs exactly that one.
+Every exported test alias — `export type X = Expect<…>`, in any
+`declare namespace` of a file that imports the DSL — shows up as a test: in the
+Test Explorer, in the gutter, and as a lens above the line you wrote it on.
+Running one runs exactly that one.
+
+Install it from the library's folder with `npm run install-extension`: it
+builds, packages and installs it into VS Code, VSCodium or Cursor, whichever is
+on your path.
 
 - **Run** — a single test, through Vitest, reported back at its own line. A file
   runs when you open or save it, and the lens shows where each test stands.
@@ -37,7 +42,11 @@ line you wrote it on. Running one runs exactly that one.
   or a `bigint` arrives as itself. Listen for it before the page finishes
   loading. It can use VS Code's `--vscode-*` theme variables.
 - **Diagnostics** — what the printer could not turn into a value, reported where
-  you wrote it, before anything runs.
+  you wrote it.
+- **Mistakes, explained** — where TypeScript rejects a test, the printer says
+  what is wrong in the test's own terms: every bad row of a `Table`, each at the
+  cell that is wrong. That cell is outlined, the explanation is written at the
+  end of its line, and hovering anywhere in TypeScript's error shows it.
 
 ## About extracted files
 

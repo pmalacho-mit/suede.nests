@@ -13,14 +13,6 @@ declare namespace pagePath {
   >;
 }
 
-export type DisplayResult = {
-  actual: unknown;
-  expected: unknown;
-  passed: boolean;
-  message: string | null;
-  meta: unknown;
-};
-
 const escape = (text: string) =>
   text
     .replace(/&/g, "&amp;")

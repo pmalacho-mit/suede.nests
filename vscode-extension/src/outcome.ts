@@ -1,6 +1,6 @@
 import { explain } from "./failure.js";
 
-import type { Assertion, Report } from "./vitest.js";
+import type { ResultRecord } from "./vitest.js";
 
 export type Outcome =
   | { state: "running" }
@@ -18,22 +18,14 @@ export const lensTitle = (outcome: Outcome | undefined) => {
 
 const BETWEEN_FAILURES = `\n\n${"─".repeat(60)}\n\n`;
 
-// with no library to ask, Vitest's own message is all there is: its first line, then frames
-const explained = ({ details }: Report, assertion: Assertion) => {
-  const detail = details.get(assertion.title);
-  if (detail?.message) return explain({ name: assertion.title, ...detail });
-  const [message = "failed", ...stack] = (
-    assertion.failureMessages?.[0] ?? "failed"
-  ).split("\n");
-  return explain({ name: assertion.title, message, stack: stack.join("\n") });
-};
+const whereOf = ({ file, location }: ResultRecord) => (location ? `${file}:${location.line}` : null);
 
-export function outcomeOf(report: Report, assertions: Assertion[], duration: number): Outcome {
-  const failed = assertions.filter((a) => a.status === "failed");
-  if (failed.length) {
-    const message = failed.map((a) => explained(report, a)).join(BETWEEN_FAILURES);
-    return { state: "failed", message, duration };
-  }
-  if (assertions.every((a) => a.status === "passed")) return { state: "passed", duration };
+const explained = (record: ResultRecord) =>
+  explain({ name: record.name, where: whereOf(record), message: "failed", ...record.errors[0] });
+
+export function outcomeOf(records: ResultRecord[], duration: number): Outcome {
+  const failed = records.filter((r) => r.state === "failed");
+  if (failed.length) return { state: "failed", message: failed.map(explained).join(BETWEEN_FAILURES), duration };
+  if (records.every((r) => r.state === "passed")) return { state: "passed", duration };
   return { state: "skipped" };
 }

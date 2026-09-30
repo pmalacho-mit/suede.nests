@@ -6,7 +6,6 @@ import { DSL_FILE, isSearchable } from "../../workspace.mts";
 export type Library = {
   root: string;
   cli: string;
-  runtime: string;
   reporter: string;
   derived: string;
 };
@@ -14,7 +13,6 @@ export type Library = {
 const libraryAt = (root: string): Library => ({
   root,
   cli: path.join(root, "cli.mts"),
-  runtime: path.join(root, "vite-plugin", "runtime.mts"),
   reporter: path.join(root, "vite-plugin", "reporter.mts"),
   derived: path.join(root, ".derived"),
 });

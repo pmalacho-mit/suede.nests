@@ -1,7 +1,6 @@
 import path from "node:path";
 import * as vscode from "vscode";
 
-import { runtimeSpecifier } from "../../vite-plugin/runtime-specifier.mts";
 import { ID, folderOf } from "./editor.js";
 import { findLibrary } from "./library.js";
 import { exec } from "./process.js";
@@ -30,12 +29,7 @@ function commandFor(uri: vscode.Uri, cwd: string, what: string, extra: string[])
     throw new Error(
       `Could not find dsl.import.meta.vitest.ts in this workspace; set ${ID}.minimalCommand`,
     );
-  // the specifier a run gives the test, so what it already printed is the answer
-  const runtime = runtimeSpecifier(library.runtime, uri.fsPath);
-  return [
-    "node",
-    [library.cli, file, what, ...extra, ...(runtime ? ["--runtime", runtime] : [])],
-  ];
+  return ["node", [library.cli, file, what, ...extra]];
 }
 
 async function ask(

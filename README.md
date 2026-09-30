@@ -1,40 +1,127 @@
 > [!NOTE]
 > This is a [suede](https://github.com/pmalacho-mit/suede) dependency.
 
+# Namespace Tests
+
+Tests written as TypeScript types, beside the code they test, and run by Vitest.
+A test is one declaration that reads as the claim it makes — call `add` with 4
+and 5, expect 9 — so the namespace under a function reads as a list of what it
+does:
+
+```ts
+import type { Expect, Invoke } from "./<path-to-library>/dsl.import.meta.vitest.ts";
+
+export const add = (a: number, b: number) => a + b;
+
+declare namespace add {
+  /** four plus five */
+  export type Simple = Expect<Invoke<typeof add, [a: 4, b: 5]>, "=", 9>;
+}
+```
+
+The type checker checks the shape of every test as you write it — you cannot
+expect a string from a function that returns a number — and the Vite plugin
+prints each one as an ordinary Vitest test, which Vitest runs.
+
+**Documentation:** [API reference](./docs/API.md) · [editor extension](./vscode-extension/README.md)
+
+## Requirements and setup
+
+- **Node 24.** The library is TypeScript that Node runs directly — its command
+  line and the editor extension included — so nothing is compiled first.
+- **Vitest 5**, which your project provides.
+
+Installing with suede adds the packages the library needs to your
+`package.json` (see [package.json](./package.json)): among them
+`@typescript/typescript6`, the TypeScript whose API the printer reads your tests
+with, under its own name so that it never displaces your project's `typescript`.
+
+Add the plugin to your Vitest config:
+
+```ts
+// vitest.config.ts
+import { defineConfig } from "vitest/config";
+import namespaceTests from "./<path-to-library>/vite-plugin/plugin.mts";
+
+export default defineConfig({
+  plugins: [namespaceTests()],
+});
+```
+
+Nothing else is needed: files with tests are found by scanning the project. The
+options, all optional:
+
+| Option                  | What it does                                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `exclude`               | Globs discovery skips, relative to the project root. `node_modules` and dot-directories are always skipped.         |
+| `include`               | Extra globs to collect tests from, as Vitest's `include`.                                                           |
+| `root`                  | Only read namespaces with this name ([what counts as a test](#what-counts-as-a-test)).                              |
+| `noIsolateModuleImport` | Modules every test shares instead of getting its own copy ([how a test is run](#how-a-test-is-run)).                |
+| `extracted`             | The glob for extracted tests, added to Vitest's `include`; `false` leaves them out ([extracting](#extracting-a-test)). |
+| `tsconfig`              | The tsconfig file name, found upward from the working directory. Default `tsconfig.json`.                          |
+| `scan`                  | Discover test files by scanning the working directory. Default `true`.                                              |
+
 ## Importing the DSL (_the path matters_)
 
 Import the DSL from [dsl.import.meta.vitest.ts](./dsl.import.meta.vitest.ts) and use
-that path / import in **every** file you write tests in:
+that path in **every** file you write tests in:
 
 ```ts
-// vendored beside your code
 import type {
   Expect,
   Invoke,
 } from "./<path-to-library>/dsl.import.meta.vitest.ts";
-
-// or installed from npm
-import type { Expect, Invoke } from "namespace-tests/dsl.import.meta.vitest";
 ```
 
-That module is named explicitly so that, when you import it, the
-string `import.meta.vitest` will appear in your file.
-
-By including `import.meta.vitest` somewhere in our file, we make use of
-vitest's [in-source testing](https://vitest.dev/guide/in-source.html) functionality.
-
-In this way, this library is just a way to accomplish [in-source testing](https://vitest.dev/guide/in-source.html) in a way that gurantees won't make it into transpiled code. 
+That module is named explicitly so that, when you import it, the string
+`import.meta.vitest` appears in your file. Vitest decides which files hold
+tests by keeping the ones whose raw text contains that string — its
+[in-source testing](https://vitest.dev/guide/in-source.html) — so importing the
+DSL is what makes your tests findable. What this library adds to in-source
+testing is the form of a test: a type that states its claim, in place of a block
+of `it` and `expect` calls.
 
 Two consequences worth knowing:
 
 - **Re-exporting the DSL hides your tests.** If you wrap it in a barrel —
-  `export type { Expect } from "namespace-tests/dsl.import.meta.vitest"` — then
-  the files importing _your_ barrel no longer contain the marker, and they are
-  silently never collected. Import the DSL directly in each file that has tests.
+  `export type { Expect } from "./<path-to-library>/dsl.import.meta.vitest.ts"` —
+  then the files importing _your_ barrel no longer contain the marker, and they
+  are silently never collected. Import the DSL directly in each file that has tests.
 - **Always `import type`.** Vitest rewrites every occurrence of
   `import.meta.vitest` in a file it collects, including the one inside your
   import path. A type-only import is erased before that can matter; a value
   import from the same path would break.
+
+## Writing tests
+
+Every building block is documented, with examples, in the
+[API reference](./docs/API.md):
+
+| To…                                             | Write                                                                                                                                |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| call a function, a constructor, a method        | [`Invoke`](./docs/API.md#invoke), [`Construct`](./docs/API.md#construct), [`Call`](./docs/API.md#call)                             |
+| assert                                          | [`Expect`](./docs/API.md#expect), [`Throws`](./docs/API.md#throws)                                                                  |
+| run effects first                               | [`Given`](./docs/API.md#given), [`ExpectGiven`](./docs/API.md#expectgiven)                                                          |
+| check many cases                                | [`Table`](./docs/API.md#table)                                                                                                      |
+| build inputs                                    | [`Fixture`](./docs/API.md#fixture), [`Widen`](./docs/API.md#widen), [`FromFile`](./docs/API.md#fromfile), [`Env`](./docs/API.md#env) |
+| compare against a stored value                  | [`Snapshot`](./docs/API.md#snapshot)                                                                                                |
+| replace a module                                | [`Mock`](./docs/API.md#mock), [`Mocked`](./docs/API.md#mocked)                                                                      |
+| skip, focus, plan, configure                    | [`Skip`](./docs/API.md#skip), [`SkipIfNotFound`](./docs/API.md#skipifnotfound), [`Only`](./docs/API.md#only), [`Todo`](./docs/API.md#todo), [`Configure`](./docs/API.md#configure) |
+| pass a config without an expected value         | [`Nothing`](./docs/API.md#nothing)                                                                                                  |
+
+**Name the arguments.** Every argument list — to `Invoke`, `Construct`, `Call`,
+and a `Table` row's `args` — is a tuple, and a named one says what each value is:
+
+```ts
+export type Sum = Expect<Invoke<typeof add, [a: 4, b: 5]>, "=", 9>;
+```
+
+The names are only read by you; the printed test passes the values in order.
+
+Everything under `Internal` is what the DSL is built from — the conditions an
+`Expect` accepts, the shapes its results take. It is documented in the
+[reference](./docs/Namespace.Internal.md) for reading hover text, not for writing
+tests.
 
 ## What counts as a test
 
@@ -49,7 +136,7 @@ it covers, and the test says where it was written:
 
 ```ts
 declare namespace parseDate {
-  export type Iso = Expect<Invoke<typeof parseDate, ["2020-01-01"]>, "truthy">;
+  export type Iso = Expect<Invoke<typeof parseDate, [input: "2020-01-01"]>, "truthy">;
 }
 // parseDate > Iso
 ```
@@ -65,13 +152,13 @@ cannot run, it says so where you wrote it rather than ignoring it:
 
 ```ts
 declare namespace add {
-  export type Oops = Invoke<typeof add, [1, 1]>;
-  // `Invoke<typeof add, [1, 1]>` is not a test:
+  export type Oops = Invoke<typeof add, [a: 1, b: 1]>;
+  // `Invoke<typeof add, [a: 1, b: 1]>` is not a test:
   // write Expect, Throws, Given or Table (or a tuple of them)
 }
 ```
 
-That arrives as a diagnostic in the editor, on that line, before anything runs.
+That arrives as a diagnostic in the editor, on that line.
 
 If you want the rest of a file's namespaces left alone, name the one to look
 inside:
@@ -82,6 +169,23 @@ namespaceTests({ root: "Tests" }); // only `declare namespace Tests…`
 
 That is an optimisation, not a requirement — there is no default root.
 
+## When a test is written wrong
+
+TypeScript checks a test as you write it, but its errors are about the DSL's
+machinery, and on a `Table` it underlines the whole table and stops at the first
+bad row. So the printer also explains each mistake where it is, in the test's
+own terms — every bad row, each at the cell that is wrong:
+
+```
+Row 2: expected "no", but scrubsTests returns boolean
+Row 3: scrubsTests takes [define: Record<string, unknown> | undefined], not ["wrong"]
+expected "no", but the actual is boolean
+```
+
+They arrive as warnings in the terminal when the tests run, and in the editor,
+where each wrong cell is outlined and hovering anywhere in TypeScript's error
+shows them. TypeScript still decides what is wrong; this only says where.
+
 ## Asserting on records
 
 When a call hands back records and the test is about one field of each, say so
@@ -90,7 +194,7 @@ a deep-partial, element by element:
 
 ```ts
 export type Anywhere = Expect<
-  Invoke<typeof discover, [Suite]>,
+  Invoke<typeof discover, [source: Suite]>,
   "matches",
   [{ name: "parseDate > Iso" }, { name: "Tests > elsewhere > Deep" }]
 >;
@@ -115,6 +219,102 @@ The DSL adds only the type: the expected list is checked against the real record
 type, so a misspelled key or a wrongly typed value is a compile error, and a
 tuple actual is checked position by position.
 
+## Beyond literals: harness modules
+
+A test can only say what a type can: literals, calls, `new`, method calls. For
+anything else — a callback, a spy, fake timers, async orchestration — write an
+ordinary function in a module of its own, and import it into the test **as a
+type**:
+
+```ts
+// lib/harness.ts
+import { vi } from "vitest";
+import { each } from "../harnessed.ts";
+
+export const callsOf = (xs: number[]) => {
+  const visit = vi.fn();
+  each(xs, visit);
+  return visit.mock.calls;
+};
+```
+
+```ts
+// harnessed.ts
+import type { callsOf } from "./lib/harness.ts";
+
+declare namespace each {
+  export type VisitsInOrder = Expect<Invoke<typeof callsOf, [xs: [1, 2, 3]]>, "=", [[1], [2], [3]]>;
+}
+```
+
+The printed test imports the harness as a value; your module only ever imports
+it as a type, so the harness — and `vitest` with it — never reaches your build.
+A harness can clean up after itself with Vitest's `onTestFinished`.
+
+## Mocking a module
+
+[`Mock`](./docs/API.md#mock) replaces a module for one test, as one of a
+`Given`'s effects:
+
+```ts
+import type { fakeRates, keepingTheRest } from "./lib/harness.ts";
+import { exchangeRate } from "./lib/rates.ts";
+
+declare namespace inEuros {
+  /** replaced by a module object the harness exports */
+  export type Faked = Given<
+    Mock<"./lib/rates.ts", typeof fakeRates>,
+    Expect<Invoke<typeof inEuros, [dollars: 10]>, "=", 20>
+  >;
+
+  /** every export a vi.fn(), and one of them told what to return */
+  export type Stubbed = Given<
+    [Mock<"./lib/rates.ts">, Call<Mocked<typeof exchangeRate>, "mockReturnValue", [value: 3]>],
+    Expect<Invoke<typeof inEuros, [dollars: 10]>, "=", 30>
+  >;
+}
+```
+
+- **A local module's mock is that test's alone.** Every test runs its own copy
+  of the modules it imports, so the next test sees the real one.
+- **A package is shared by every test in the file**, and so is a mock of one;
+  the printer warns when you mock one, and when a path resolves to nothing.
+- **A replacement comes from another module** — a module object, or a factory
+  that is handed `importOriginal`, as `vi.mock`'s is — because `vi.mock` runs
+  before the test's own code.
+
+## Tests that need files the package does not ship
+
+A library's tests may read fixtures that are in its repository but not in the
+copy someone installs. [`SkipIfNotFound`](./docs/API.md#skipifnotfound) runs a
+test where its file is, and skips it where it is not:
+
+```ts
+export type Seeded = SkipIfNotFound<
+  "./fixtures/users.json",
+  Expect<Invoke<typeof countUsers, [users: FromFile<"./fixtures/users.json", "json", unknown[]>]>, ">", 0>
+>;
+```
+
+The path is relative to the test file, as `FromFile`'s is.
+
+## Display pages
+
+A test can hand what it saw to an HTML page of your own — a chart instead of a
+wall of numbers — by naming the page as `Expect`'s fourth argument:
+
+```ts
+export type Visual = Expect<
+  Invoke<typeof histogram, [xs: [1, 1, 1, 2, 3, 5, 8, 13], buckets: 4, min: 0, max: 16]>,
+  "=",
+  [5, 1, 1, 1],
+  "./fixtures/display-histogram.html"
+>;
+```
+
+The editor extension opens it beside the code; see
+[Display](./vscode-extension/README.md) for what the page receives.
+
 ## How a test is run
 
 Nothing is written to disk. For a module with tests, the plugin appends a
@@ -131,6 +331,11 @@ needs, pruned of everything it does not, followed by the test itself. So every
 test gets a fresh copy of the module under test — and of that module's
 first-party imports, which are forked per test so state cannot leak from one
 test to the next.
+
+The plugin only runs under Vitest — `vite build` skips it — so no collector
+reaches a build, and the namespaces are erased with the rest of your types. A
+value you declare outside a namespace for tests to use is ordinary code, and a
+build treats it like any other export.
 
 Packages are shared, since Vitest hands those to Node. If some first-party
 module of yours is _meant_ to be singular — a connection pool, a registry —
@@ -174,19 +379,15 @@ The editor extension extracts on a click, and puts Run, Debug and Delete at the
 top of the file it wrote.
 
 Extracting is usually instant, because a run has already printed every test in
-the file: `release/cli.mts` answers from the cache without loading a compiler at all.
-It only does the work when nothing has run yet.
+the file: the library's `cli.mts` answers from the cache without loading a
+compiler at all. It only does the work when nothing has run yet.
 
 ```
-node release/cli.mts src/counter.ts "Counter > Chainable" [--runtime <spec>] [--root <ns>]
-node release/cli.mts src/counter.ts "Counter > Chainable" --served
-node release/cli.mts src/counter.ts --collector
-node release/cli.mts --help
+node <path-to-library>/cli.mts src/counter.ts "Counter > Chainable" [--root <ns>]
+node <path-to-library>/cli.mts src/counter.ts "Counter > Chainable" --served
+node <path-to-library>/cli.mts src/counter.ts --collector
+node <path-to-library>/cli.mts --help
 ```
-
-`--runtime` is how the generated test imports the library's runtime helpers. It
-has to match what the plugin uses, or the answer is printed afresh rather than
-read back — the editor passes it for you.
 
 What you get is the test, not quite what a run serves: a run also gives each
 test its own copy of the first-party modules it reaches, by tagging their
@@ -198,13 +399,12 @@ so in its header.
 ## Where things are written
 
 One directory, and it is not in your project: **`.derived/`, inside the
-library's own folder** — `release/.derived/` when the library is vendored,
-`node_modules/…/.derived/` when it is installed.
+library's own folder**.
 
 ```
 .derived/
-├── diagnostics.json   what the printer could not turn into a value
-├── results.json       what the reporter saw, so a failure can be explained
+├── diagnostics.json   what the printer could not turn into a value, and the mistakes it explains
+├── results.json       what the reporter saw: each failure's diff, and what a display page shows
 └── cache/             only ever an optimisation; delete it freely
     ├── minimal/       tests the printer has already written out
     └── node/          the compiled form of the modules a command loads
@@ -226,9 +426,9 @@ configure.
 To start over:
 
 ```
-node release/cli.mts --clean-extracted [dir]   # extracted tests, searched recursively from dir (default: cwd)
-node release/cli.mts --clean-cache             # printed tests, and Node's compiled modules
-node release/cli.mts --clean [dir]             # both of the above
+node <path-to-library>/cli.mts --clean-extracted [dir]   # extracted tests, searched recursively from dir (default: cwd)
+node <path-to-library>/cli.mts --clean-cache             # printed tests, and Node's compiled modules
+node <path-to-library>/cli.mts --clean [dir]             # both of the above
 ```
 
 An extracted test is recognised by the header the editor writes, not by its
@@ -240,3 +440,13 @@ editor reads, stay.
 `NAMESPACE_TESTS_DIR` moves it, which the library's own end-to-end test needs so
 that a run inside a run does not write over what the outer one wrote. There is
 no reason to set it otherwise.
+
+## Scripts
+
+Run from the library's folder:
+
+| Script                        | What it does                                                           |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| `npm run install-extension`   | builds, packages and installs the [editor extension](./vscode-extension/README.md) into VS Code (or VSCodium, Cursor) |
+| `npm run build-extension`     | only builds it                                                         |
+| `npm run clean-cache`         | deletes the printer's cache, as `--clean-cache` does                   |

@@ -1,9 +1,28 @@
 // also decoded in a webview, so it uses only what a browser has: btoa, not Buffer
+import type { TestArtifactBase } from "vitest";
 import type { Expect, Invoke, Table } from "../dsl.import.meta.vitest.ts";
 
 export type EncodedArray = Encoded[];
 export type EncodedObject = { [key: string]: Encoded };
 export type Encoded = null | boolean | number | string | EncodedArray | EncodedObject;
+
+export const DISPLAY = "namespace-tests:display";
+
+/** What a test records for its display page, encoded so a `Map` or a `bigint` survives the trip. */
+export type DisplayArtifact = TestArtifactBase & {
+  type: typeof DISPLAY;
+  /** The display page, relative to the test file. */
+  page: string;
+  actual: Encoded;
+  expected?: Encoded;
+  meta?: Encoded;
+};
+
+declare module "vitest" {
+  interface TestArtifactRegistry {
+    "namespace-tests:display": DisplayArtifact;
+  }
+}
 
 const TYPED = [
   "Int8Array",

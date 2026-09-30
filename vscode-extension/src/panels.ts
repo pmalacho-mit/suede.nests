@@ -39,7 +39,7 @@ export function displayPanels(extensionUri: vscode.Uri) {
       expected: values.expected,
       passed: values.passed,
       message: values.message,
-      meta: values.meta ?? null,
+      meta: values.meta,
     });
   };
 
@@ -72,10 +72,10 @@ export function displayPanels(extensionUri: vscode.Uri) {
         return void vscode.window.showWarningMessage(
           `${title} recorded nothing to display. Does its page exist, and did the test run?`,
         );
-      const page = vscode.Uri.file(pagePath(testFile, values.display));
+      const page = vscode.Uri.file(pagePath(testFile, values.page));
       if (!fs.existsSync(page.fsPath))
         return void vscode.window.showErrorMessage(
-          `${title} names a display page that is not there: ${values.display}`,
+          `${title} names a display page that is not there: ${values.page}`,
         );
       const panel = open.get(id)?.panel ?? createPanel(id, title, page);
       open.set(id, { panel, page });

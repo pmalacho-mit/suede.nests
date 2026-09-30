@@ -12,7 +12,6 @@ import {
   emitTests,
   headerLines,
   namespaces,
-  RUNTIME_MODULE,
 } from "./emit/index.mts";
 
 import type { Emitted, EmitInput } from "./emit/index.mts";
@@ -24,7 +23,6 @@ export type Options = {
   /** Only reproduce tests written under this namespace. */
   root?: string | undefined;
   tsconfig?: string | undefined;
-  runtime?: string | undefined;
   /** A program that already holds the file, lent instead of building one. */
   input?: EmitInput | undefined;
 };
@@ -72,16 +70,12 @@ function loaded(file: string, { input, tsconfig = "tsconfig.json" }: Options): E
 // the compiler hands out a new `SourceFile` when the text changes, so this keys on the text
 const printed = new WeakMap<ts.SourceFile, Map<string, Emitted>>();
 
-export function emittedFor(
-  input: EmitInput,
-  root?: string,
-  runtime?: string,
-): Emitted {
-  const key = `${root ?? ""}\0${runtime ?? ""}`;
-  const byOptions = printed.get(input.source) ?? new Map<string, Emitted>();
-  printed.set(input.source, byOptions);
-  let emitted = byOptions.get(key);
-  if (!emitted) byOptions.set(key, (emitted = emitTests(input, root, runtime)));
+export function emittedFor(input: EmitInput, root?: string): Emitted {
+  const key = root ?? "";
+  const byRoot = printed.get(input.source) ?? new Map<string, Emitted>();
+  printed.set(input.source, byRoot);
+  let emitted = byRoot.get(key);
+  if (!emitted) byRoot.set(key, (emitted = emitTests(input, root)));
   return emitted;
 }
 
@@ -238,7 +232,7 @@ function reachable(
 
 export function collectorFor(file: string, options: Options = {}): string {
   const input = loaded(file, options);
-  const { tests } = emittedFor(input, options.root, options.runtime);
+  const { tests } = emittedFor(input, options.root);
   const abs = path.resolve(file);
   const collector = collectorLines(
     tests.map((t) => ({ id: idFor(abs, t.name), line: t.line })),
@@ -277,7 +271,7 @@ export async function servedFor(
   options: Options = {},
 ): Promise<string> {
   const input = loaded(file, options);
-  const { tests } = emittedFor(input, options.root, options.runtime);
+  const { tests } = emittedFor(input, options.root);
   const abs = path.resolve(file);
   const modules = await Promise.all(
     testsNamed(tests, testName, file).map(async ({ name }) => {
@@ -290,8 +284,8 @@ export async function servedFor(
 }
 
 // the file writes its own banner, so the preamble's is left out
-const preambleFor = (tests: EmittedTest[], runtime: string | undefined) =>
-  headerLines(allNeeds(tests.map((t) => t.needs)), runtime ?? RUNTIME_MODULE).filter(
+const preambleFor = (tests: EmittedTest[], file: string) =>
+  headerLines(allNeeds(tests.map((t) => t.needs)), file).filter(
     (line) => !line.startsWith("//"),
   );
 
@@ -336,12 +330,12 @@ function moduleText(kept: ts.Statement[], used: Set<string>) {
 
 function printMinimal(file: string, testName: string, options: Options): string {
   const input = loaded(file, options);
-  const emitted = emittedFor(input, options.root, options.runtime);
+  const emitted = emittedFor(input, options.root);
   const tests = testsNamed(emitted.tests, testName, file);
   const reached = keptStatements(input, tests[0]);
   const kept = input.source.statements.filter((statement) => reached.has(statement));
   const text = [
-    preambleFor(tests, options.runtime).join("\n"),
+    preambleFor(tests, input.source.fileName).join("\n"),
     "",
     moduleText(kept, namesUsed(tests, kept)).trim(),
     "",
@@ -358,7 +352,7 @@ export function minimalFor(
 ): string {
   if (!cache) return printMinimal(file, testName, options);
   const source = fs.readFileSync(path.resolve(file), "utf8");
-  const key = cacheKey(source, testName, options.root, options.runtime);
+  const key = cacheKey(source, testName, options.root, path.resolve(file));
   const hit = read(key);
   if (hit !== null) return hit;
   const minimal = printMinimal(file, testName, options);

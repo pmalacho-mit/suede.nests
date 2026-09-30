@@ -10,7 +10,7 @@
  *
  * declare namespace add {
  *   /** 4 + 5 is 9 *\/
- *   export type Simple = Expect<Invoke<typeof add, [4, 5]>, "=", 9>;
+ *   export type Simple = Expect<Invoke<typeof add, [a: 4, b: 5]>, "=", 9>;
  * }
  * ```
  *
@@ -36,10 +36,10 @@
  * 3. JSDoc on a test alias becomes its human-readable description.
  *
  * ───────────────────────────────────────────────────────────────────────────
- * Evaluation model (what the runtime does with these types)
+ * Evaluation model (what the plugin does with these types)
  * ───────────────────────────────────────────────────────────────────────────
  *
- * The runtime is a *printer*: it walks the syntax of each test alias (not its
+ * The plugin is a *printer*: it walks the syntax of each test alias (not its
  * resolved type, so it sees intent — `Invoke<...>` — rather than result —
  * `number`) and prints ordinary Vitest code, which Vitest then runs. Type
  * literals print as the equivalent value literals; DSL nodes print as calls
@@ -62,7 +62,7 @@
  *
  *   ```ts
  *   export type Rename = Given<
- *     Invoke<typeof setName, [Container, "olivia"]>,   // mutates the object…
+ *     Invoke<typeof setName, [container: Container, name: "olivia"]>,   // mutates the object…
  *     Expect<Container["name"], "=", "olivia">         // …that this reads.
  *   >;
  *   ```
@@ -75,7 +75,7 @@
  *   becomes an ordinary test function whose first statements are `const`
  *   bindings for the aliases it (transitively) references, followed by the
  *   effects and assertions in source order. Generic aliases
- *   (`type Parsed<S> = Invoke<typeof parse, [S]>`) become functions.
+ *   (`type Parsed<S> = Invoke<typeof parse, [source: S]>`) become functions.
  *
  * - **Indexed access reads a property.** `Result["name"]`, `Bytes["length"]`,
  *   `Rows[0]["id"]` read the property from the materialized value.
@@ -110,7 +110,7 @@ import type { MockedFunction } from "vitest";
 export declare namespace Internal {
   const NT: unique symbol;
 
-  /** Marker so the runtime (and hover text) can identify DSL nodes by name. */
+  /** Marker so the printer (and hover text) can identify DSL nodes by name. */
   interface Node<Kind extends string> {
     /** @hidden */
     readonly [NT]: Kind;
@@ -123,7 +123,7 @@ export declare namespace Internal {
   /**
    * `T & never` is eagerly `never`, and `X | never` is `X`, so `X | Phantom<T>` is
    * exactly `X` — but it "uses" `T`, which keeps parameters that exist purely
-   * for the runtime (`Args`, `Path`, …) from tripping `noUnusedParameters`.
+   * for the printer (`Args`, `Path`, …) from tripping `noUnusedParameters`.
    */
   type Phantom<T> = T & never;
 }
@@ -142,7 +142,7 @@ export declare namespace Internal {
  * type Name = Invoke<typeof user.getName, []>;         // `this` is `user`
  * type Doubled = Invoke<typeof map, [arr: [1, 2], fn: typeof double]>; // functions are literals too
  *
- * export type Simple = Expect<Invoke<typeof add, [4, 5]>, "=", 9>;
+ * export type Simple = Expect<Invoke<typeof add, [a: 4, b: 5]>, "=", 9>;
  * ```
  */
 export type Invoke<
@@ -156,7 +156,7 @@ export declare namespace Internal {
    * it returns.
    *
    * `Parameters<F>` and `ReturnType<F>` see only the *last* overload, so
-   * `Invoke<typeof s.replace, [",", ";"]>` would be rejected for not being the
+   * `Invoke<typeof s.replace, [searchValue: ",", replaceValue: ";"]>` would be rejected for not being the
    * replacer-function form. Matching the overload list instead means any
    * spelling the function actually accepts is accepted here — up to four
    * overloads, which covers the standard library.
@@ -198,8 +198,10 @@ export declare namespace Internal {
  * Instantiate a class with literal arguments. Evaluates to the instance type.
  * Bind it to an alias to keep a handle on the instance:
  *
+ * **STRONGLY RECOMMENDED** to use named tuples on `Args` for clarity.
+ *
  * ```ts
- * type Counter = Construct<typeof Counter, [10]>;
+ * type Counter = Construct<typeof Counter, [start: 10]>;
  *
  * export type StartsAt = Expect<Counter["count"], "=", 10>;
  * ```
@@ -213,8 +215,12 @@ export type Construct<
  * Call a method on a materialized value (typically a `Construct` alias or a
  * `Fixture`). Evaluates to the (awaited) return type of the method.
  *
+ * **STRONGLY RECOMMENDED** to use named tuples on `Args` for clarity.
+ *
  * ```ts
- * type Counter = Construct<typeof Counter, [10]>;
+ * type Counter = Construct<typeof Counter, [start: 10]>;
+ * type Stored = Call<Store, "put", [key: "k", value: 1]>;
+ *
  * export type Increments = Given<
  *   Call<Counter, "increment", []>,
  *   Expect<Counter["count"], "=", 11>
@@ -238,7 +244,7 @@ export declare namespace Internal {
 
 /**
  * A typed fixture: declares the *type* the rest of the test sees and the
- * literal *initial value* the runtime materializes. Solves the problem that a
+ * literal *initial value* the test materializes. Solves the problem that a
  * literal `{ name: "parker" }` has type `{ name: "parker" }`, which would
  * reject an expectation of `"olivia"` after a mutation.
  *
@@ -246,7 +252,7 @@ export declare namespace Internal {
  * type Container = Fixture<{ name: string }, { name: "parker" }>;
  *
  * export type Rename = Given<
- *   Invoke<typeof setName, [Container, "olivia"]>,
+ *   Invoke<typeof setName, [container: Container, name: "olivia"]>,
  *   Expect<Container["name"], "=", "olivia">
  * >;
  * ```
@@ -273,13 +279,13 @@ export declare namespace Internal {
 
 /**
  * Widen literal types to their primitive base (`"parker"` → `string`,
- * `[1, 2]` → `number[]`) while the runtime still materializes the literal.
+ * `[1, 2]` → `number[]`) while the test still materializes the literal.
  * Handy when a fixture's shape is obvious and you don't want to spell it out.
  *
  * ```ts
  * type Sample = Widen<[2, 4, 4, 4, 5, 5, 7, 9]>; // number[], materialized as written
  *
- * export type Mean = Expect<Invoke<typeof mean, [Sample]>, "=", 5>;
+ * export type Mean = Expect<Invoke<typeof mean, [xs: Sample]>, "=", 5>;
  * ```
  */
 export type Widen<T> = T extends string
@@ -306,7 +312,7 @@ export type Widen<T> = T extends string
  * type Csv = FromFile<"./fixtures/rows.csv">;                // string
  * type Cfg = FromFile<"./fixtures/config.json", "json", AppConfig>;
  *
- * export type Parses = Expect<Invoke<typeof parseCsv, [Csv]>, "isNotEmpty">;
+ * export type Parses = Expect<Invoke<typeof parseCsv, [text: Csv]>, "isNotEmpty">;
  * ```
  */
 export type FromFile<
@@ -334,7 +340,7 @@ export declare namespace Internal {
  * ```ts
  * type Domain = Env<"TEST_EMAIL_DOMAIN", "example.com">;
  *
- * export type Invites = Expect<Invoke<typeof inviteAddress, ["ada", Domain]>, "endsWith", "example.com">;
+ * export type Invites = Expect<Invoke<typeof inviteAddress, [user: "ada", domain: Domain]>, "endsWith", "example.com">;
  * ```
  */
 export type Env<
@@ -347,16 +353,16 @@ export type Env<
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * A stored expected value. On first run the runtime writes the actual value to
+ * A stored expected value. On first run the test writes the actual value to
  * `__snapshots__/<file>.<TestName>[.<Name>].snap` next to the test file; on
  * later runs it compares against that file. Updating snapshots is a runner
  * command, not a code change.
  *
  * ```ts
- * export type Renders = Expect<Invoke<typeof render, [Tree]>, "=", Snapshot>;
+ * export type Renders = Expect<Invoke<typeof render, [tree: Tree]>, "=", Snapshot>;
  * export type Both = [
- *   Expect<Invoke<typeof render, [Tree]>, "=", Snapshot<"html">>,
- *   Expect<Invoke<typeof toText, [Tree]>, "=", Snapshot<"text">>,
+ *   Expect<Invoke<typeof render, [tree: Tree]>, "=", Snapshot<"html">>,
+ *   Expect<Invoke<typeof toText, [tree: Tree]>, "=", Snapshot<"text">>,
  * ];
  * ```
  */
@@ -386,16 +392,16 @@ export declare namespace Internal {
  * The core assertion.
  *
  * ```ts
- * Expect<Invoke<typeof add, [4, 5]>, "=", 9>
- * Expect<Invoke<typeof greet, ["Ada"]>, "startsWith", "Hello">
- * Expect<Invoke<typeof sqrt, [2]>, ["~=", 1e-12], 1.4142135623730951>
- * Expect<Invoke<typeof parse, ["{"]>, "throws", SyntaxError>
+ * Expect<Invoke<typeof add, [a: 4, b: 5]>, "=", 9>
+ * Expect<Invoke<typeof greet, [name: "Ada"]>, "startsWith", "Hello">
+ * Expect<Invoke<typeof sqrt, [x: 2]>, ["~=", 1e-12], 1.4142135623730951>
+ * Expect<Invoke<typeof parse, [source: "{"]>, "throws", SyntaxError>
  * Expect<Invoke<typeof list, []>, "isEmpty">
  * Expect<Pixels, "=", ExpectedPixels, "./display-image.html">
  * ```
  *
  * `Expected` is constrained by `Actual` and `Condition` together, so mismatched
- * shapes are compile errors — the IDE tells you before the runtime does.
+ * shapes are compile errors — the IDE tells you before the test runs.
  */
 export type Expect<
   Actual,
@@ -475,7 +481,7 @@ export declare namespace Internal {
     // `toHaveLength` both understand one.
     | (T extends ReadonlySet<unknown> ? ArrayCondition : never)
     // A Map understands `toHaveLength`, but not `toContain` — ask about a key
-    // with `Call<M, "has", [k]>`.
+    // with `Call<M, "has", [key: k]>`.
     | (T extends ReadonlyMap<unknown, unknown>
         ? "isEmpty" | "isNotEmpty"
         : never)
@@ -547,7 +553,7 @@ export declare namespace Internal {
 
   /**
    * A class written as a value (`typeof RangeError`) or, for error classes, as a
-   * type (`RangeError`). The runtime resolves either spelling to the constructor.
+   * type (`RangeError`). The printer resolves either spelling to the constructor.
    * For `"instanceOf"` on non-error classes the actual's own instance type is
    * also accepted: `Expect<Repo, "instanceOf", UserRepository>`.
    */
@@ -641,10 +647,10 @@ export declare namespace Internal {
  *
  * ```ts
  * export type Errors = [
- *   Throws<Invoke<typeof parse, ["(1 + 2"]>, ParseError>,
- *   Throws<Invoke<typeof parse, ["1 +"]>, { instanceOf: ParseError; matches: "unexpected .*end of input" }>,
- *   Throws<Invoke<typeof parse, ["1 2"]>, "trailing">,
- *   Throws<Invoke<typeof parse, [""]>>, // any throw at all
+ *   Throws<Invoke<typeof parse, [source: "(1 + 2"]>, ParseError>,
+ *   Throws<Invoke<typeof parse, [source: "1 +"]>, { instanceOf: ParseError; matches: "unexpected .*end of input" }>,
+ *   Throws<Invoke<typeof parse, [source: "1 2"]>, "trailing">,
+ *   Throws<Invoke<typeof parse, [source: ""]>>, // any throw at all
  * ];
  * ```
  */
@@ -663,17 +669,17 @@ export type Throws<
  *
  * ```ts
  * export type Rename = Given<
- *   Invoke<typeof setName, [Container, "olivia"]>,
+ *   Invoke<typeof setName, [container: Container, name: "olivia"]>,
  *   Expect<Container["name"], "=", "olivia">
  * >;
  *
  * export type Lifecycle = Given<
  *   [
  *      Call<Store, "open", []>,
- *      Call<Store, "put", ["k", 1]>
+ *      Call<Store, "put", [key: "k", value: 1]>
  *   ],
  *   [
- *      Expect<Call<Store, "get", ["k"]>, "=", 1>,
+ *      Expect<Call<Store, "get", [key: "k"]>, "=", 1>,
  *      Expect<Store["size"], "=", 1>
  *   ]
  * >;
@@ -736,12 +742,12 @@ export type ExpectGiven<
  * ```ts
  * export type Faked = Given<
  *   Mock<"./rates.ts", typeof fakeRates>,
- *   Expect<Invoke<typeof inEuros, [10]>, "=", 20>
+ *   Expect<Invoke<typeof inEuros, [dollars: 10]>, "=", 20>
  * >;
  *
  * export type Stubbed = Given<
- *   [Mock<"./rates.ts">, Call<Mocked<typeof exchangeRate>, "mockReturnValue", [2]>],
- *   Expect<Invoke<typeof inEuros, [10]>, "=", 20>
+ *   [Mock<"./rates.ts">, Call<Mocked<typeof exchangeRate>, "mockReturnValue", [value: 2]>],
+ *   Expect<Invoke<typeof inEuros, [dollars: 10]>, "=", 20>
  * >;
  * ```
  */
@@ -762,8 +768,8 @@ export declare namespace Internal {
  *
  * ```ts
  * export type Stubbed = Given<
- *   [Mock<"./rates.ts">, Call<Mocked<typeof exchangeRate>, "mockReturnValue", [2]>],
- *   Expect<Invoke<typeof inEuros, [10]>, "=", 20>
+ *   [Mock<"./rates.ts">, Call<Mocked<typeof exchangeRate>, "mockReturnValue", [value: 2]>],
+ *   Expect<Invoke<typeof inEuros, [dollars: 10]>, "=", 20>
  * >;
  * ```
  */
@@ -773,13 +779,14 @@ export type Mocked<F extends Internal.AnyFn> = MockedFunction<F>;
  * Parameterised tests: call `F` once per row and check the result.
  * Each row is reported as its own case (`Tests > add > Table[2]`).
  *
- * **STRONGLY RECOMMENDED** to use named tuples for clarity.
+ * **STRONGLY RECOMMENDED** to use named tuples for clarity: name each row's
+ * elements, and name the arguments inside `args` as the function names its parameters.
  *
  * ```ts
  * export type Cases = Table<typeof add, [
- *   [args: [1, 2], expected: 3],
- *   [args: [a: -1, b: 1], expected: 0], // even more names!
- *   [args: [0.1, 0.2], condition: ["~=", 1e-9], expected: 0.3],
+ *   [args: [a: 1, b: 2], expected: 3],
+ *   [args: [a: -1, b: 1], expected: 0],
+ *   [args: [a: 0.1, b: 0.2], condition: ["~=", 1e-9], expected: 0.3],
  * ]>;
  * ```
  */
@@ -835,7 +842,7 @@ export type Skip<
  * ```ts
  * export type Seeded = SkipIfNotFound<
  *   "./fixtures/users.json",
- *   Expect<Invoke<typeof load, [FromFile<"./fixtures/users.json", "json">]>, "isNotEmpty">
+ *   Expect<Invoke<typeof load, [users: FromFile<"./fixtures/users.json", "json">]>, "isNotEmpty">
  * >;
  * ```
  */
@@ -856,7 +863,7 @@ export declare namespace Internal {
  * Run only tests marked `Only` (when any exist in the workspace/file).
  *
  * ```ts
- * export type Focus = Only<Expect<Invoke<typeof add, [4, 5]>, "=", 9>>;
+ * export type Focus = Only<Expect<Invoke<typeof add, [a: 4, b: 5]>, "=", 9>>;
  * ```
  */
 export type Only<T extends Internal.Test> = Internal.Modifier<"only", T, "">;
@@ -880,7 +887,7 @@ export type Todo<Reason extends string = ""> = Internal.Modifier<
  * ```ts
  * export type Big = Configure<
  *   { timeout: 30_000; retries: 1 },
- *   Expect<Invoke<typeof normalize, [Invoke<typeof range, [1_000_000]>]>["length"], "=", 1_000_000>
+ *   Expect<Invoke<typeof normalize, [xs: Invoke<typeof range, [n: 1_000_000]>]>["length"], "=", 1_000_000>
  * >;
  * ```
  */

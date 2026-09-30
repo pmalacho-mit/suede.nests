@@ -47,14 +47,10 @@ const printerVersion = createHash("sha256")
   .digest("hex")
   .slice(0, 8);
 
-export const cacheKey = (
-  source: string,
-  testName: string,
-  root = "",
-  runtime = "",
-) =>
+// `file` is where the source is: a printed test imports the library relative to it
+export const cacheKey = (source: string, testName: string, root = "", file = "") =>
   createHash("sha256")
-    .update(`${printerVersion}\0${root}\0${runtime}\0${testName}\0${source}`)
+    .update(`${printerVersion}\0${root}\0${file}\0${testName}\0${source}`)
     .digest("hex")
     .slice(0, 32);
 
