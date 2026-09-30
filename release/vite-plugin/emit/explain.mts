@@ -1,5 +1,5 @@
 // TypeScript judges a test; this says where, and in the test's own words.
-import ts from "typescript";
+import ts from "@typescript/typescript6";
 
 import type { EmitContext, Warning } from "./context.mts";
 import type { Expect, Invoke } from "../../dsl.import.meta.vitest.ts";
@@ -150,13 +150,19 @@ function withRowChecks(text: string, tables: ts.TypeReferenceNode[]) {
   return { text: out + text.slice(last), checks };
 }
 
+// a copy of a package TypeScript has already seen is a redirect to the first, which a new program must read afresh
+const reusable = (program: ts.Program, name: string) => {
+  const source = program.getSourceFile(name);
+  return source && !(source as { redirectInfo?: unknown }).redirectInfo ? source : undefined;
+};
+
 const hostServing = (program: ts.Program, file: string, text: string): ts.CompilerHost => {
   const host = ts.createCompilerHost(program.getCompilerOptions(), true);
   const { getSourceFile, fileExists, readFile } = host;
   host.getSourceFile = (name, version, onError, create) =>
     name === file
       ? ts.createSourceFile(name, text, version, true)
-      : (program.getSourceFile(name) ?? getSourceFile.call(host, name, version, onError, create));
+      : (reusable(program, name) ?? getSourceFile.call(host, name, version, onError, create));
   host.fileExists = (name) => !!program.getSourceFile(name) || fileExists.call(host, name);
   host.readFile = (name) => program.getSourceFile(name)?.text ?? readFile.call(host, name);
   return host;

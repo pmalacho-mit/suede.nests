@@ -15,7 +15,10 @@
 // is erased from any build and can only ever run through the generated tests.
 import path from "node:path";
 import { createHash } from "node:crypto";
-import ts from "typescript";
+import ts from "@typescript/typescript6";
+
+// the library's own TypeScript, so a test's programs are read by the copy that reads them in the library
+export { ts };
 
 import {
   createEmitContext,

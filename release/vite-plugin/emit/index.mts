@@ -8,7 +8,7 @@ import {
 } from "./model.mts";
 import { allNeeds, headerLines, printTest } from "./print.mts";
 
-import type ts from "typescript";
+import type ts from "@typescript/typescript6";
 import type { EmitInput, Line, Warning } from "./context.mts";
 import type { EmittedTest } from "./print.mts";
 

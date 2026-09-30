@@ -1,4 +1,4 @@
-import ts from "typescript";
+import { ts } from "../release/_internal/harness.mts";
 import path from "node:path";
 import fs from "node:fs";
 import { createEmitContext, emitTests } from "../release/vite-plugin/emit/index.mts";

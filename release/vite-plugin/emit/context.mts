@@ -1,4 +1,4 @@
-import ts from "typescript";
+import ts from "@typescript/typescript6";
 import { isDslModule } from "../../workspace.mts";
 
 import type { Binding, Expr, ModuleMock } from "./ir.mts";
