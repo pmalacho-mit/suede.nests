@@ -21,17 +21,19 @@ bash <(curl -fsSL https://raw.githubusercontent.com/pmalacho-mit/suede/refs/head
 
 </details>
 
+## Documentation
+
+- [The library's README](./release/README.md): setup, writing tests, mocking, extracting a test
+- [API reference](./release/docs/API.md): every building block of the DSL, with examples
+- [The editor extension](./release/vscode-extension/README.md)
+
 ## Importing the DSL — the path matters
 
 Import the DSL from the file whose name contains `import.meta.vitest`, and use
 that path in **every** file you write tests in:
 
 ```ts
-// vendored beside your code
-import type { Expect, Invoke } from "./namespace-testing/dsl.import.meta.vitest.ts";
-
-// or installed from npm
-import type { Expect, Invoke } from "namespace-tests/dsl.import.meta.vitest";
+import type { Expect, Invoke } from "./<path-to-library>/dsl.import.meta.vitest.ts";
 ```
 
 That filename is load-bearing, not a joke. Vitest decides which files hold tests
@@ -43,7 +45,7 @@ what puts that string in your file, and so is what makes your tests findable.
 Two consequences worth knowing:
 
 - **Re-exporting the DSL hides your tests.** If you wrap it in a barrel —
-  `export type { Expect } from "namespace-tests/dsl.import.meta.vitest"` — then
+  `export type { Expect } from "./<path-to-library>/dsl.import.meta.vitest.ts"` — then
   the files importing *your* barrel no longer contain the marker, and they are
   silently never collected. Import the DSL directly in each file that has tests.
 - **Always `import type`.** Vitest rewrites every occurrence of
@@ -82,3 +84,18 @@ specifiers that import them, so one entry covers a module however its importers
 happen to spell the path — `./registry.ts` from a sibling and
 `../../registry.ts` from further down are the same module, and one pattern
 catches both.
+
+## Developing
+
+`release/` is the library, with its own `package.json` and lockfile; the root
+holds this repository's tooling — the tests, the examples, the docs. One
+`npm install` at the root installs both.
+
+| Script                       | What it does                                                            |
+| ---------------------------- | ----------------------------------------------------------------------- |
+| `npm test`                   | the library's own tests, the examples, and `tests/`                     |
+| `npm run typecheck`          | the library, the examples, and the editor extension                     |
+| `npm run docs:api`           | regenerates [release/docs](./release/docs/API.md) from the DSL's JSDoc |
+| `npm run cli -- <args>`      | the library's command line, as `node release/cli.mts <args>`            |
+| `npm run install-extension`  | builds, packages and installs the editor extension                      |
+| `npm run release <script>`   | any of `release/`'s own scripts                                         |

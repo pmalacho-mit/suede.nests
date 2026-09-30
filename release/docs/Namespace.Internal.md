@@ -579,7 +579,7 @@ Every call signature a function type has, as its parameters paired with what
 it returns.
 
 `Parameters<F>` and `ReturnType<F>` see only the *last* overload, so
-`Invoke<typeof s.replace, [",", ";"]>` would be rejected for not being the
+`Invoke<typeof s.replace, [searchValue: ",", replaceValue: ";"]>` would be rejected for not being the
 replacer-function form. Matching the overload list instead means any
 spelling the function actually accepts is accepted here — up to four
 overloads, which covers the standard library.

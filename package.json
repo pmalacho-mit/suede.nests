@@ -15,6 +15,7 @@
     "docs:api": "typedoc",
     "cli": "node release/cli.mts",
     "release": "npm --prefix release run",
-    "install-extension": "npm run release install-extension"
+    "install-extension": "npm run release install-extension",
+    "postinstall": "npm --prefix release install"
   }
 }

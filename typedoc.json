@@ -3,7 +3,7 @@
   "entryPoints": ["release/dsl.import.meta.vitest.ts"],
   "tsconfig": "tsconfig.json",
   "plugin": ["typedoc-plugin-markdown"],
-  "out": "release/api",
+  "out": "release/docs",
   "name": "namespace-tests DSL",
   "readme": "none",
   "router": "module",
