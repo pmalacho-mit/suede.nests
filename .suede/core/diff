@@ -32,8 +32,10 @@
 # included, and whatever your .gitignore excludes left out. `.gitrepo` is
 # dropped from both sides: it is local bookkeeping and always differs.
 #
-# Needs `git` and network access to the dependency's remote. git-subrepo is
-# not required.
+# Needs `git` and network access to the dependency's remote. The recorded
+# remote is tried first and its other spelling (SSH <-> HTTPS) second, so a
+# dependency installed with an SSH remote still compares on a machine with no
+# key. git-subrepo is not required.
 #
 # Exit: 0 no difference, 1 there is one (as `git diff` reports it), 2 the
 # command could not run at all.
@@ -108,6 +110,34 @@ copy_working_tree() { # <destination>
   done < <(git -C "$DEP_DIR" ls-files -z --cached --others --exclude-standard)
 }
 
+# The ways to reach one repository, the recorded one first. An installed
+# dependency records the SSH spelling, because that is the one `upstream` can
+# push through; a machine with no key - a CI runner, a fresh container - reaches
+# the same public repository over HTTPS. So fetch from what is recorded, and
+# fall back to the other spelling. A local path, or an address carrying a port,
+# has one spelling: itself.
+spellings() { # <url>
+  local url="$1" rest host path
+  printf '%s\n' "$url"
+  case "$url" in
+    https://*|http://*) rest="${url#*://}"; rest="${rest#*@}"; host="${rest%%/*}"; path="${rest#*/}" ;;
+    ssh://*)            rest="${url#ssh://}"; rest="${rest#*@}"; host="${rest%%/*}"; path="${rest#*/}" ;;
+    *@*:*)              rest="${url#*@}"; host="${rest%%:*}"; path="${rest#*:}" ;;
+    *)                  return 0 ;;
+  esac
+  [[ -n "$host" && -n "$path" && "$host" != *:* ]] || return 0
+  path="${path%/}"; path="${path%.git}"
+  case "$url" in
+    https://*|http://*) printf 'git@%s:%s.git\n' "$host" "$path" ;;
+    *)                  printf 'https://%s/%s.git\n' "$host" "$path" ;;
+  esac
+}
+
+# Our own fetches fail fast and never ask anyone anything: no password prompt,
+# no host-key question, five seconds to connect.
+export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes -o ConnectTimeout=5}"
+export GIT_TERMINAL_PROMPT=0
+
 # The other side, materialised from the remote. No history is kept - this is
 # the same degit-shaped fetch the installer does, for the same reason: the tree
 # is all anyone needs to compare against. Sets REFERENCE_COMMIT to whatever was
@@ -115,20 +145,28 @@ copy_working_tree() { # <destination>
 # gone.
 REFERENCE_COMMIT=""
 fetch_reference() { # <destination> <commit-or-empty-for-branch-tip>
-  local destination="$1" commit="$2"
+  local destination="$1" commit="$2" url tried="" reached=""
   git init --quiet "$destination"
-  git -C "$destination" remote add origin "$REMOTE"
+  while IFS= read -r url; do
+    tried+="${tried:+, }$url"
+    git -C "$destination" remote remove origin 2>/dev/null || true
+    git -C "$destination" remote add origin "$url"
+    if [[ -z "$commit" ]]; then
+      git -C "$destination" fetch --quiet --depth 1 origin "refs/heads/$BRANCH" 2>/dev/null || continue
+    else
+      # Fetching a bare SHA is refused by some servers; the branch always works.
+      git -C "$destination" fetch --quiet --depth 1 origin "$commit" 2>/dev/null \
+        || git -C "$destination" fetch --quiet origin "refs/heads/$BRANCH" 2>/dev/null \
+        || continue
+    fi
+    reached="$url"; break
+  done < <(spellings "$REMOTE")
+  [[ -n "$reached" ]] || die "could not reach $REMOTE ($BRANCH); tried: $tried"
   if [[ -z "$commit" ]]; then
-    git -C "$destination" fetch --quiet --depth 1 origin "refs/heads/$BRANCH" \
-      || die "could not reach $REMOTE ($BRANCH)"
     git -C "$destination" checkout --quiet --detach FETCH_HEAD
   else
-    # Fetching a bare SHA is refused by some servers; the branch always works.
-    git -C "$destination" fetch --quiet --depth 1 origin "$commit" 2>/dev/null \
-      || git -C "$destination" fetch --quiet origin "refs/heads/$BRANCH" \
-      || die "could not reach $REMOTE ($BRANCH)"
     git -C "$destination" checkout --quiet --detach "$commit" 2>/dev/null \
-      || die "$REMOTE has no commit $commit on $BRANCH"
+      || die "$reached has no commit $commit on $BRANCH"
   fi
   REFERENCE_COMMIT="$(git -C "$destination" rev-parse HEAD)"
   rm -rf "$destination/.git" "$destination/.gitrepo"

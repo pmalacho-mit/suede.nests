@@ -66,7 +66,9 @@ rule: its siblings have to be inside `release/` too, because a link out of
 `release/` reaches consumers broken. `deps.sh` places those installs inside
 `release/` and refuses to offer a copy from outside it.
 
-Needs `git`, and the [`diff`](#diff) beside it for the reuse check.
+Needs `git`, and the [`diff`](#diff) beside it for the reuse check. Like
+`diff`, it falls back from a record's remote to its other spelling (SSH ↔
+HTTPS) when fetching what it looks ahead at.
 
 ## [diff](./diff)
 
@@ -104,7 +106,10 @@ for a difference, as `git diff` reports them, with `2` reserved for "could not
 run at all" so a caller can tell an answer from a failure.
 
 Needs only `git` and the ability to reach the remote; git-subrepo is not
-required.
+required. The recorded remote is tried first and its other spelling second
+(SSH ↔ HTTPS), so a dependency installed with an SSH remote still compares on a
+machine with no key — a CI runner, a fresh container. Only when neither answers
+does it exit `2`, naming both spellings it tried.
 
 ## [sync](./sync)
 
@@ -117,11 +122,14 @@ bash <dependency>/.suede/core/sync
 Anything you pass is handed straight to `git subrepo pull`, so `sync --force`
 and the rest of git-subrepo's options work as documented there.
 
-Two things it does that a bare `git subrepo pull` will not: it runs from the
+Three things it does that a bare `git subrepo pull` will not: it runs from the
 repository root with a root-relative path, so where you are does not matter;
-and it resolves symlinks to the real folder first, because `git subrepo pull`
-on a symlink path fails outright — and the edge entries between your
-dependencies are symlinks.
+it resolves symlinks to the real folder first, because `git subrepo pull` on a
+symlink path fails outright — and the edge entries between your dependencies
+are symlinks; and when the recorded remote does not answer it pulls over the
+other spelling (SSH ↔ HTTPS) instead, says so, and puts the recorded remote back
+in the `.gitrepo` afterwards, since git-subrepo would otherwise keep the
+fallback. Pass your own `-r`/`--remote` to skip that.
 
 `git subrepo pull` also requires a clean working tree, while installing does
 not. If you have just installed something, commit before syncing.
@@ -136,6 +144,10 @@ bash <dependency>/.suede/core/upstream
 ```
 
 First commit the changes you want to send — the working tree must be clean.
+You can run it through any path that reaches the dependency, including its
+declaring symlink (`bash suede.nests.sweater-vest/.suede/core/upstream`): like
+`sync`, it resolves to the real folder first, because `git subrepo push` on a
+symlink path fails.
 
 1. Splits the dependency's local commits out via `git subrepo` and pushes them to
    a deterministic branch on the library's remote:

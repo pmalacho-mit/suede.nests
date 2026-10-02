@@ -16,12 +16,15 @@ set -euo pipefail
 
 err() { echo "error: $*" >&2; exit 1; }
 
-SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)" \
+# Physical paths, like `sync` and `diff`: reached through a symlink (the
+# declaration or an edge), the real folder is the subrepo, and `git subrepo
+# push` on the symlink path fails.
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd -P)" \
   || err "cannot resolve script location"
 
 # The dependency root is exactly two levels up from this script
 # (<dep>/.gitrepo, with this script at <dep>/.suede/core/upstream).
-DEP_DIR="$(cd "$SELF_DIR/../.." >/dev/null 2>&1 && pwd)" \
+DEP_DIR="$(cd "$SELF_DIR/../.." >/dev/null 2>&1 && pwd -P)" \
   || err "cannot resolve dependency root above $SELF_DIR"
 [ -f "$DEP_DIR/.gitrepo" ] \
   || err "no .gitrepo found at $DEP_DIR/.gitrepo — is this inside a vendored suede dependency?"
