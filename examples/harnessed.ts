@@ -33,5 +33,5 @@ declare namespace debounce {
 
 declare namespace retrying {
   /** async orchestration: a load that fails once, then succeeds */
-  export type RetriesOnce = Expect<Invoke<typeof fetchedTwice, []>, "=", { value: 7; attempts: 2 }>;
+  export type RetriesOnce = Expect<Invoke<typeof fetchedTwice>, "=", { value: 7; attempts: 2 }>;
 }

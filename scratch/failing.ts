@@ -9,7 +9,7 @@ declare namespace Tests.wrong {
   export type OffByOne = Expect<Invoke<typeof add, [4, 5]>, "=", 10>;
   /** `matches` compares only the keys listed, and this one is wrong */
   export type Shape = Expect<
-    Invoke<typeof user, []>,
+    Invoke<typeof user>,
     "matches",
     { name: "bob" }
   >;

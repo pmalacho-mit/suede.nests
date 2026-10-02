@@ -34,12 +34,12 @@ declare namespace formatCents {
 declare namespace Isolation {
   export type IsolatedFirst = Given<
     Invoke<typeof formatCents, [1]>,
-    Expect<Invoke<typeof conversionCount, []>, "=", 1>
+    Expect<Invoke<typeof conversionCount>, "=", 1>
   >;
 
   export type IsolatedSecond = Given<
     Invoke<typeof formatCents, [2]>,
-    Expect<Invoke<typeof conversionCount, []>, "=", 1>
+    Expect<Invoke<typeof conversionCount>, "=", 1>
   >;
 }
 
@@ -61,11 +61,11 @@ export class Cart {
 }
 
 declare namespace Cart {
-  type Cart = Construct<typeof Cart, []>;
+  type Cart = Construct<typeof Cart>;
 
   /** the imported module is reached through the class under test */
   export type Receipt = Given<
     [Call<Cart, "add", [1099]>, Call<Cart, "add", [250]>],
-    Expect<Call<Cart, "receipt", []>, "=", "$13.49">
+    Expect<Call<Cart, "receipt">, "=", "$13.49">
   >;
 }

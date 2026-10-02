@@ -136,18 +136,19 @@ export declare namespace Internal {
  * Call a function with literal arguments. Evaluates to the (awaited) return type.
  *
  * **STRONGLY RECOMMENDED** to use named tuples on `Args` for clarity.
+ * `Args` can be left out when no parameter is required.
  *
  * ```ts
  * type Sum = Invoke<typeof add, [a: 4, b: 5]>;               // number  ⇒ 9 at runtime
- * type Name = Invoke<typeof user.getName, []>;         // `this` is `user`
+ * type Name = Invoke<typeof user.getName>;           // `this` is `user`; no arguments, no tuple
  * type Doubled = Invoke<typeof map, [arr: [1, 2], fn: typeof double]>; // functions are literals too
  *
  * export type Simple = Expect<Invoke<typeof add, [a: 4, b: 5]>, "=", 9>;
  * ```
  */
 export type Invoke<
-  F extends Internal.AnyFn,
-  Args extends Internal.ArgumentsOf<F>,
+  F extends Internal.CalleeFor<Args>,
+  Args extends Internal.ArgumentsOf<F> | [] = [],
 > = Awaited<Internal.ReturnFor<F, Args>> | Internal.Phantom<Args>;
 
 export declare namespace Internal {
@@ -180,6 +181,15 @@ export declare namespace Internal {
           ? [A, R]
           : never;
 
+  /**
+   * What a callee must be for `Args`: omitting them, or passing `[]`, is only
+   * allowed of a callee that has no required parameters.
+   */
+  type CalleeFor<Args> = [] extends Args ? () => unknown : AnyFn;
+
+  /** `CalleeFor`, for a class. */
+  type ConstructorFor<Args> = [] extends Args ? abstract new () => unknown : AnyCtor;
+
   /** The arguments any of a function's overloads takes. */
   type ArgumentsOf<T> = Signatures<T>[0];
 
@@ -199,6 +209,7 @@ export declare namespace Internal {
  * Bind it to an alias to keep a handle on the instance:
  *
  * **STRONGLY RECOMMENDED** to use named tuples on `Args` for clarity.
+ * `Args` can be left out when no parameter is required.
  *
  * ```ts
  * type Counter = Construct<typeof Counter, [start: 10]>;
@@ -207,8 +218,8 @@ export declare namespace Internal {
  * ```
  */
 export type Construct<
-  C extends Internal.AnyCtor,
-  Args extends ConstructorParameters<C>,
+  C extends Internal.ConstructorFor<Args>,
+  Args extends ConstructorParameters<C> | [] = [],
 > = InstanceType<C> | Internal.Phantom<Args>;
 
 /**
@@ -216,28 +227,29 @@ export type Construct<
  * `Fixture`). Evaluates to the (awaited) return type of the method.
  *
  * **STRONGLY RECOMMENDED** to use named tuples on `Args` for clarity.
+ * `Args` can be left out when no parameter is required.
  *
  * ```ts
  * type Counter = Construct<typeof Counter, [start: 10]>;
  * type Stored = Call<Store, "put", [key: "k", value: 1]>;
  *
  * export type Increments = Given<
- *   Call<Counter, "increment", []>,
+ *   Call<Counter, "increment">,
  *   Expect<Counter["count"], "=", 11>
  * >;
  * ```
  */
 export type Call<
   Receiver,
-  Method extends Internal.MethodsOf<Receiver>,
-  Args extends Internal.ArgumentsOf<Receiver[Method]>,
+  Method extends Internal.MethodsCallableWith<Receiver, Args>,
+  Args extends Internal.ArgumentsOf<Receiver[Method]> | [] = [],
 > =
   | Awaited<Internal.ReturnFor<Receiver[Method], Args>>
   | Internal.Phantom<Args>;
 
 export declare namespace Internal {
-  type MethodsOf<T> = {
-    [K in keyof T]-?: T[K] extends AnyFn ? K : never;
+  type MethodsCallableWith<T, Args> = {
+    [K in keyof T]-?: T[K] extends CalleeFor<Args> ? K : never;
   }[keyof T] &
     string;
 }
@@ -379,7 +391,7 @@ export declare namespace Internal {
  * out only to reach the argument after it, a display page or a config.
  *
  * ```ts
- * export type Ready = Expect<Invoke<typeof isReady, []>, "truthy", Nothing, { timeout: 50 }>;
+ * export type Ready = Expect<Invoke<typeof isReady>, "truthy", Nothing, { timeout: 50 }>;
  * ```
  */
 export type Nothing = Internal.NothingNode;
@@ -396,7 +408,7 @@ export declare namespace Internal {
  * Expect<Invoke<typeof greet, [name: "Ada"]>, "startsWith", "Hello">
  * Expect<Invoke<typeof sqrt, [x: 2]>, ["~=", 1e-12], 1.4142135623730951>
  * Expect<Invoke<typeof parse, [source: "{"]>, "throws", SyntaxError>
- * Expect<Invoke<typeof list, []>, "isEmpty">
+ * Expect<Invoke<typeof list>, "isEmpty">
  * Expect<Pixels, "=", ExpectedPixels, "./display-image.html">
  * ```
  *
@@ -423,7 +435,7 @@ export declare namespace Internal {
   type UniversalCondition =
     | "=" // deep structural equality (Object.is for primitives, element-wise for arrays/typed arrays, key-wise for objects)
     | "!=" // negation of "="
-    | "is" // reference identity (Object.is), useful with aliases: Expect<Call<B, "self", []>, "is", B>
+    | "is" // reference identity (Object.is), useful with aliases: Expect<Call<B, "self">, "is", B>
     | "isNot"
     | "satisfies" // Expected is `typeof predicate`; passes when predicate(actual) is truthy
     | "instanceOf" // Expected is `typeof SomeClass`
@@ -675,7 +687,7 @@ export type Throws<
  *
  * export type Lifecycle = Given<
  *   [
- *      Call<Store, "open", []>,
+ *      Call<Store, "open">,
  *      Call<Store, "put", [key: "k", value: 1]>
  *   ],
  *   [
@@ -709,7 +721,7 @@ export declare namespace Internal {
  * `Given` + `Expect` in one call (the original scaffold's shape).
  *
  * ```ts
- * export type Increments = ExpectGiven<Call<Counter, "increment", []>, Counter["count"], "=", 11>;
+ * export type Increments = ExpectGiven<Call<Counter, "increment">, Counter["count"], "=", 11>;
  * ```
  */
 export type ExpectGiven<
@@ -825,7 +837,7 @@ export declare namespace Internal {
  * Skip a test. It is discovered and shown as skipped, never run.
  *
  * ```ts
- * export type Flaky = Skip<Expect<Invoke<typeof fetchRates, []>, "isNotEmpty">, "rate limited in CI">;
+ * export type Flaky = Skip<Expect<Invoke<typeof fetchRates>, "isNotEmpty">, "rate limited in CI">;
  * ```
  */
 export type Skip<

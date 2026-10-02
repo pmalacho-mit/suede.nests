@@ -136,7 +136,7 @@ describe("assertions", () => {
   test("compares a typed array against a tuple as a plain array", () => {
     const { cx, type } = contextFor(`
       const bytes = () => new Uint8Array([1, 2]);
-      type Subject = Expect<Invoke<typeof bytes, []>, "=", [1, 2]>;
+      type Subject = Expect<Invoke<typeof bytes>, "=", [1, 2]>;
     `);
     const [statement] = lowerBody(cx, type("Subject"), false);
     expect(statement).toMatchObject({ kind: "assert", shape: "typedArray" });
@@ -203,9 +203,9 @@ describe("assertions", () => {
   test("builds the throws matcher from a class, a message or a matcher literal", () => {
     const { cx, type } = contextFor(`
       const boom = () => { throw new RangeError("boom"); };
-      type Class = Throws<Invoke<typeof boom, []>, RangeError>;
-      type Matcher = Throws<Invoke<typeof boom, []>, { instanceOf: RangeError; message: "boom" }>;
-      type Pattern = Throws<Invoke<typeof boom, []>, { matches: "/bo+m/" }>;
+      type Class = Throws<Invoke<typeof boom>, RangeError>;
+      type Matcher = Throws<Invoke<typeof boom>, { instanceOf: RangeError; message: "boom" }>;
+      type Pattern = Throws<Invoke<typeof boom>, { matches: "/bo+m/" }>;
     `);
     const printed = (alias: string) =>
       lowerBody(cx, type(alias), false).flatMap(printStatement)[0];

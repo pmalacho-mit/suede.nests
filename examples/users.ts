@@ -106,9 +106,9 @@ declare namespace UserRepository {
     [
       Expect<Ada["roles"], "=", ["admin"]>,
       Expect<Ada, "satisfies", typeof isAdmin>,
-      Expect<Call<Repo, "list", []>, "some", typeof isAdmin>,
+      Expect<Call<Repo, "list">, "some", typeof isAdmin>,
       Expect<
-        Call<Repo, "list", []>,
+        Call<Repo, "list">,
         "every",
         Invoke<typeof hasEmailDomain, ["example.com"]>
       >,

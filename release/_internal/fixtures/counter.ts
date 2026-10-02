@@ -44,7 +44,7 @@ declare namespace Counter {
 
   /** reset() empties history, and does so on the same array object. */
   export type Reset = Given<
-    [Call<Counter, "increment", [2]>, Call<Counter, "reset", []>],
+    [Call<Counter, "increment", [2]>, Call<Counter, "reset">],
     [
       Expect<Counter["count"], "=", 0>,
       Expect<Counter["history"], "isEmpty">,
