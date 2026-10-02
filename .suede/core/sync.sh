@@ -91,7 +91,7 @@ remote_of() { git config -f "$1/.gitrepo" --get subrepo.remote 2>/dev/null || tr
 # `.suede/core` and a `.github/workflows` of its own, each a subrepo of this
 # same library. A scan finds those too, and pulling one edits a vendored
 # dependency - which then no longer matches the commit its `.gitrepo` names, so
-# `suede diff` calls the pointer dishonest and `push-release.sh` refuses to
+# `diff.sh` calls the pointer dishonest and `push-release.sh` refuses to
 # publish. What suede owns here is a fixed, short list.
 library_subrepos() {
   local directory

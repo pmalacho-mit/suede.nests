@@ -69,20 +69,9 @@ open_with_gh() {
 # reason the offline harness can exercise the real flow rather than a mock.
 open_with_gitea() {
   local body_path="$1" payload
-  payload="$(BODY_PATH="$body_path" TITLE="$TITLE" HEAD="$SUBMISSION_REF" \
-    BASE="$MAIN_BRANCH" DRAFT="$CONFLICTED" python3 - <<'PAYLOAD'
-import json, os
-with open(os.environ["BODY_PATH"], encoding="utf-8") as handle:
-    body = handle.read()
-print(json.dumps({
-    "title": os.environ["TITLE"],
-    "body": body,
-    "head": os.environ["HEAD"],
-    "base": os.environ["BASE"],
-    "labels": [],
-}))
-PAYLOAD
-)"
+  command -v jq >/dev/null 2>&1 || { echo "open-pull-request: jq is required for the gitea backend" >&2; exit 1; }
+  payload="$(jq -n --rawfile body "$body_path" --arg title "$TITLE" --arg head "$SUBMISSION_REF" \
+    --arg base "$MAIN_BRANCH" '{title: $title, body: $body, head: $head, base: $base, labels: []}')"
   curl -fsSL -X POST \
     -H "Authorization: token ${GITEA_TOKEN:?GITEA_TOKEN is required}" \
     -H "Content-Type: application/json" \
