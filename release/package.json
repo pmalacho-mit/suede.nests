@@ -1,5 +1,5 @@
 {
-  "name": "typescript-namespace-tests",
+  "name": "nests",
   "workspaces": [
     "vscode-extension"
   ],
