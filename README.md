@@ -36,20 +36,66 @@ Installing with suede adds the packages the library needs to your
 `@typescript/typescript6`, the TypeScript whose API the printer reads your tests
 with, under its own name so that it never displaces your project's `typescript`.
 
-Add the plugin to your Vitest config:
+Add the plugin to your Vite config, beside the plugins you already have:
 
 ```ts
-// vitest.config.ts
-import { defineConfig } from "vitest/config";
+// vite.config.ts
+/// <reference types="vitest/config" />
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 import namespaceTests from "./<path-to-library>/vite-plugin/plugin.mts";
 
 export default defineConfig({
-  plugins: [namespaceTests()],
+  plugins: [react(), namespaceTests()],
 });
 ```
 
-Nothing else is needed: files with tests are found by scanning the project. The
-options, all optional:
+The plugin only does anything under Vitest. `vite dev` and `vite build` load
+the same config, and to them it is inert: it does not scan, does not start a
+compiler, and does not touch a module. So the one config can serve your app
+and your tests, and the tests see the same aliases and plugins as the app.
+
+Nothing else is needed: files with tests are found by scanning the project, and
+the plugin adds them to Vitest's `includeSource` itself. You do not list them,
+and you do not need the `define: { "import.meta.vitest": "undefined" }` that
+in-source testing usually asks for, because nothing that reads
+`import.meta.vitest` ever reaches a build.
+
+**If you keep a separate `vitest.config.ts`,** Vitest reads it *instead of*
+`vite.config.ts`, not as well as it. Merge the two, so your tests keep the app's
+plugins and aliases:
+
+```ts
+// vitest.config.ts
+import { defineConfig, mergeConfig } from "vitest/config";
+import viteConfig from "./vite.config.ts";
+import namespaceTests from "./<path-to-library>/vite-plugin/plugin.mts";
+
+export default mergeConfig(
+  viteConfig,
+  defineConfig({ plugins: [namespaceTests()] }),
+);
+```
+
+(If `vite.config.ts` exports a function, call it first:
+`mergeConfig(viteConfig({ command: "serve", mode: "test" }), …)`.) A project
+with no app to build, like a library, can skip `vite.config.ts` and put the
+plugin straight into a `vitest.config.ts` from `defineConfig` in
+`vitest/config`.
+
+**If your `tsconfig.json` only lists references,** as the one `create-vite`
+writes does (`"files": []`, then `tsconfig.app.json` and `tsconfig.node.json`),
+name the one that covers your source. The printer reads your tests with that
+file's compiler options, including `paths` and `jsx`:
+
+```ts
+namespaceTests({ tsconfig: "tsconfig.app.json" });
+```
+
+Run Vitest from the project root. Discovery, `exclude` and
+`noIsolateModuleImport` are all relative to the directory it starts in.
+
+The options, all optional:
 
 | Option                  | What it does                                                                                                        |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -332,8 +378,8 @@ test gets a fresh copy of the module under test — and of that module's
 first-party imports, which are forked per test so state cannot leak from one
 test to the next.
 
-The plugin only runs under Vitest — `vite build` skips it — so no collector
-reaches a build, and the namespaces are erased with the rest of your types. A
+The plugin only runs under Vitest (`vite dev` and `vite build` skip it), so no
+collector reaches a build, and the namespaces are erased with the rest of your types. A
 value you declare outside a namespace for tests to use is ordinary code, and a
 build treats it like any other export.
 
