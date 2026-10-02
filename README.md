@@ -7,7 +7,7 @@ To see the installable source code, please checkout the [release branch](https:/
 ## Installation
 
 ```bash
-bash <(curl -fsSL https://suede.sh/install/release) --repo pmalacho-mit/suede.typescript-namespace-tests
+bash <(curl -fsSL https://suede.sh/install/release) --repo pmalacho-mit/suede.nests
 ```
 
 <details>
@@ -16,7 +16,7 @@ See alternative to using <a href="https://github.com/pmalacho-mit/suede#suedesh"
 </summary>
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install/release.sh) --repo pmalacho-mit/suede.typescript-namespace-tests
+bash <(curl -fsSL https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install/release.sh) --repo pmalacho-mit/nests
 ```
 
 </details>
