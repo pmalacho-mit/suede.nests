@@ -1,15 +1,5 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`Tests > UserRepository > CreateSnapshot 1`] = `
-{
-  "createdAt": "2026-01-01T00:00:00.000Z",
-  "email": "ada@example.com",
-  "id": 1,
-  "name": "Ada",
-  "roles": [],
-}
-`;
-
 exports[`UserRepository > CreateSnapshot 1`] = `
 {
   "createdAt": "2026-01-01T00:00:00.000Z",

@@ -242,7 +242,9 @@ export default function namespaceTests({
   const cwd = process.cwd();
   const marker = testNamespaceMarker(root);
   const diagnostics: Record<string, Warning[]> = {};
-  const service = languageService(cwd, tsconfig);
+  // a `vite.config.ts` builds this for `vite dev` and `vite build` too, which never read a program
+  let service: ReturnType<typeof languageService> | undefined;
+  const theService = () => (service ??= languageService(cwd, tsconfig));
   const testModulesUnder = testModuleFinder({
     cwd,
     exclude,
@@ -277,8 +279,9 @@ export default function namespaceTests({
 
   return {
     name: "namespace-tests",
-    // Vitest always serves; a build must never receive the collector
-    apply: "serve",
+    // only under Vitest, which sets VITEST before it loads the config: `vite dev`
+    // has no use for the collector, and a build must never receive it
+    apply: () => !!process.env.VITEST,
     // before vite:esbuild/oxc strips the namespaces
     enforce: "pre",
     config(userConfig: ViteUserConfig): ViteUserConfig {
@@ -317,7 +320,7 @@ export default function namespaceTests({
     load(id) {
       const entry = generated.get(id);
       if (!entry) return null;
-      const input = service.inputFor(entry.source);
+      const input = theService().inputFor(entry.source);
       return fork(
         minimalFor(entry.source, entry.test, {
           root,
@@ -329,7 +332,7 @@ export default function namespaceTests({
     },
 
     watchChange(id) {
-      service.changed(id);
+      service?.changed(id);
       for (const [generatedId, entry] of generated)
         if (entry.source === id) generated.delete(generatedId);
     },
@@ -340,7 +343,7 @@ export default function namespaceTests({
 
       const id = withoutQuery(rawId);
       if (!isTypeScript(id) || !marker.test(code)) return null;
-      const input = service.inputAsWritten(id, code);
+      const input = theService().inputAsWritten(id, code);
       if (!input) return null;
       const { warnings, tests } = emittedFor(input, root);
       report(id, warnings, (message) => this.warn(message));

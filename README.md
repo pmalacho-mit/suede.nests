@@ -27,6 +27,27 @@ bash <(curl -fsSL https://raw.githubusercontent.com/pmalacho-mit/suede/refs/head
 - [API reference](./release/docs/API.md): every building block of the DSL, with examples
 - [The editor extension](./release/vscode-extension/README.md)
 
+## Setup
+
+Add the plugin to the `vite.config.ts` your app already has. Vitest reads that
+file too, and the plugin is inert under `vite dev` and `vite build`:
+
+```ts
+// vite.config.ts
+/// <reference types="vitest/config" />
+import { defineConfig } from "vite";
+import namespaceTests from "./<path-to-library>/vite-plugin/plugin.mts";
+
+export default defineConfig({
+  plugins: [/* your plugins */ namespaceTests()],
+});
+```
+
+A separate `vitest.config.ts` *replaces* `vite.config.ts` for Vitest, so merge
+the two if you keep one. If your `tsconfig.json` only lists references, pass
+`tsconfig: "tsconfig.app.json"`. Both cases, and every option, are covered in
+[the library's setup section](./release/README.md#requirements-and-setup).
+
 ## Importing the DSL — the path matters
 
 Import the DSL from the file whose name contains `import.meta.vitest`, and use
@@ -69,8 +90,8 @@ test gets a fresh copy of the module under test — and of that module's
 first-party imports, which are forked per test so state cannot leak from one
 test to the next.
 
-The plugin only runs under Vitest — `vite build` skips it — so no collector
-reaches a build, and the namespaces are erased with the rest of your types. A
+The plugin only runs under Vitest (`vite dev` and `vite build` skip it), so no
+collector reaches a build, and the namespaces are erased with the rest of your types. A
 value you declare outside a namespace for tests to use is ordinary code, and a
 build treats it like any other export.
 
