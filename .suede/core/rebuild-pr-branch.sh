@@ -98,7 +98,7 @@ git checkout "refs/remotes/${REMOTE}/${MAIN_BRANCH}" -- "${RELEASE_DIR}/.gitrepo
 git add -A
 
 has_changes=true
-if git diff --quiet --cached; then
+if git diff --quiet --cached --no-ext-diff; then
   has_changes=false
 else
   git commit --quiet -m "chore(suede): proposed change from ${SUBMISSION_REF}"

@@ -9,10 +9,12 @@ maintainer's tools and the scripts CI runs — none of them ship to consumers.
 All of it is bash. Every script runs from the repository root whatever
 directory you call it from, and applies one rule:
 
-> A **release dependency** is a root entry named `<repo><sep><name>` — a
-> symlink, by convention, which the installer creates — that resolves to a
-> folder holding a `.gitrepo` outside `release/`. `<repo>` is this repository's
-> name and `<sep>` is `.` or `__`. Nothing else declares one.
+> A **release dependency** is a symlink at the root named `<name><sep><repo>`
+> — what it is, then who needs it — that resolves to a folder holding a
+> `.gitrepo` outside `release/`. `<repo>` is this repository's name, or that
+> name without its `suede.`/`suede__` prefix (the installer drops it when the
+> dependency is prefixed too); `<sep>` is `.` or `__`. Nothing else declares
+> one: it is simply this repository's own edge, and a real folder never counts.
 
 This folder is a [git-subrepo](https://github.com/ingydotnet/git-subrepo) of the
 suede library, so you get fixes by pulling rather than by editing:
@@ -98,7 +100,7 @@ off the tree:
 
 ```
 KIND         ENTRY                      PATH                       PIN
-release      my-app.widget              widget                     86abeeb
+release      widget.my-app              widget                     86abeeb
 development  -                          fixtures/harness           4f10c2a
 vendored     -                          release/mixin              9bb0e41
 ```
@@ -127,8 +129,8 @@ review of your imports:
 
 ```bash
 git mv widget release/widget          # the bytes now ship
-git rm my-app.widget                  # no longer a pointer, so no declaration
-grep -rn 'my-app.widget' release/     # repoint these to ./widget
+git rm widget.my-app                  # no longer a pointer, so no declaration
+grep -rn 'widget.my-app' release/     # repoint these to ./widget
 ```
 
 Vendored code ships whole, so whatever `widget` needs beside it has to move

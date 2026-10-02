@@ -2,10 +2,12 @@
 # .suede/core/lib.sh — what the maintainer's scripts have in common. Sourced,
 # never run.
 #
-# The one rule everything here applies: a RELEASE DEPENDENCY is a root entry
-# named <repo><sep><name> - a symlink, by convention - that resolves to a folder
-# holding a .gitrepo outside release/. <repo> is this repository's name and
-# <sep> is `.` or `__`. Nothing else declares one.
+# The one rule everything here applies: a RELEASE DEPENDENCY is a symlink at
+# the root named <name><sep><repo> - "what it is, then who needs it" - that
+# resolves to a folder holding a .gitrepo outside release/. <repo> is this
+# repository's name, or that name without its `suede.`/`suede__` prefix (the
+# installer drops it when the dependency is prefixed too); <sep> is `.` or
+# `__`. Nothing else declares one: it is simply this repository's own edge.
 #
 # Inputs (env):
 #   RELEASE_DIR          default: release
@@ -61,28 +63,45 @@ real_path_of() { # <entry>
   printf '%s\n' "${target#"$ROOT"/}"
 }
 
-# Every release dependency, as "<entry>\t<real path>" lines, sorted. Entries
-# that carry the name but do not resolve to an install are reported on stderr
-# and left out: an unfinished install or a leftover, not a declaration.
-release_dependencies() {
-  local repo entry sep real
+# The names this repository goes by at the end of a declaring symlink: its own,
+# and, for a `suede.`/`suede__`-prefixed repository, the name without it.
+repo_tails() {
+  local repo
   repo="$(repo_name)"
-  for entry in "$repo".* "$repo"__*; do
-    [[ -e "$entry" || -L "$entry" ]] || continue
-    for sep in "${SEPARATORS[@]}"; do
-      [[ "$entry" == "$repo$sep"?* ]] || continue
-      real="$(real_path_of "$entry")"
-      if [[ -z "$real" ]]; then
-        lib_say "$entry: dangling - it declares a release dependency but points at nothing"
-      elif [[ ! -f "$real/.gitrepo" ]]; then
-        lib_say "$entry: $real has no .gitrepo - not an installed dependency"
-      elif [[ "$real" == "$RELEASE_DIR" || "$real" == "$RELEASE_DIR"/* ]]; then
-        lib_say "$entry: points inside $RELEASE_DIR/ - a vendored dependency needs no declaration"
-      else
-        printf '%s\t%s\n' "$entry" "$real"
-      fi
-      break
+  printf '%s\n' "$repo"
+  case "$repo" in
+    suede.?*)  printf '%s\n' "${repo#suede.}" ;;
+    suede__?*) printf '%s\n' "${repo#suede__}" ;;
+  esac
+}
+
+# Every release dependency, as "<entry>\t<real path>" lines, sorted. A symlink
+# that carries the name but does not resolve to an install is reported on
+# stderr and left out: an unfinished install or a leftover, not a declaration.
+# Real folders never declare, whatever they are called.
+release_dependencies() {
+  local entry tail sep real matched
+  local tails=()
+  while IFS= read -r tail; do tails+=("$tail"); done < <(repo_tails)
+  for entry in *; do
+    [[ -L "$entry" ]] || continue
+    matched=0
+    for tail in "${tails[@]}"; do
+      for sep in "${SEPARATORS[@]}"; do
+        [[ "$entry" == ?*"$sep$tail" ]] && matched=1
+      done
     done
+    [[ "$matched" == 1 ]] || continue
+    real="$(real_path_of "$entry")"
+    if [[ -z "$real" ]]; then
+      lib_say "$entry: dangling - it declares a release dependency but points at nothing"
+    elif [[ ! -f "$real/.gitrepo" ]]; then
+      lib_say "$entry: $real has no .gitrepo - not an installed dependency"
+    elif [[ "$real" == "$RELEASE_DIR" || "$real" == "$RELEASE_DIR"/* ]]; then
+      lib_say "$entry: points inside $RELEASE_DIR/ - a vendored dependency needs no declaration"
+    else
+      printf '%s\t%s\n' "$entry" "$real"
+    fi
   done | sort
 }
 

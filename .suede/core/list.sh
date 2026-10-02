@@ -5,12 +5,12 @@
 #   bash .suede/core/list.sh
 #
 #   KIND         ENTRY                      PATH                       PIN
-#   release      my-app.widget              widget                     86abeeb
+#   release      widget.my-app              widget                     86abeeb
 #   development  -                          fixtures/harness           4f10c2a
 #   vendored     -                          release/mixin              9bb0e41
 #
 # The kind is read off the tree, the same way extract reads it: an install
-# inside release/ is vendored; one that a root entry named <repo><sep><name>
+# inside release/ is vendored; one that a root symlink named <name><sep><repo>
 # resolves to is a release dependency; anything else is development. suede's
 # own vendored machinery (.suede/core, .github/workflows) is left out.
 

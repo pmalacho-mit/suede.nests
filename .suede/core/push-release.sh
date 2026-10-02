@@ -41,7 +41,8 @@ report() {
 refresh_manifest() {
   bash "$CORE_DIR/extract.sh"
   git add -A "$RELEASE_DIR/.suede/.dependencies" 2>/dev/null || true
-  if git diff --cached --quiet -- "$RELEASE_DIR"; then
+  # --no-ext-diff: a diff.external tool (difftastic, say) would print here.
+  if git diff --cached --quiet --no-ext-diff -- "$RELEASE_DIR"; then
     lib_say "manifest unchanged"
     return 0
   fi

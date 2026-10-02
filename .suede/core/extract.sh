@@ -5,7 +5,7 @@
 #
 #   bash .suede/core/extract.sh
 #
-# One record per root entry named <repo><sep><name> that resolves to an
+# One record per root symlink named <name><sep><repo> that resolves to an
 # installed dependency outside release/: `<entry>.gitrepo`, holding the HTTPS
 # remote, the branch and the commit. A consumer's deps.sh reads these and
 # recreates each entry beside the installed copy of this dependency.
