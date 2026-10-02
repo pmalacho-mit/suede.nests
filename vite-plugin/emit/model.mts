@@ -185,10 +185,28 @@ declare namespace lowerExpr {
   export type Arity = Expect<
     Invoke<
       typeof harness.expressionWarnings,
-      [`${Add}type Subject = Invoke<typeof add>;`]
+      [`${Add}type Subject = Call<typeof add>;`]
     >,
     "=",
-    ["`Invoke<typeof add>` expects 2 type arguments"]
+    ["`Call<typeof add>` expects 2 type arguments"]
+  >;
+
+  type NoParameters = `
+    const none = () => 1;
+    class Cart { total() { return 0; } }
+  `;
+
+  /** an argument tuple left out is a call with no arguments */
+  export type OmittedArguments = Table<
+    typeof harness.printExpression,
+    [
+      [args: [`${NoParameters}type Subject = Invoke<typeof none>;`], expected: "none()"],
+      [args: [`${NoParameters}type Subject = Construct<typeof Cart>;`], expected: "new Cart()"],
+      [
+        args: [`${NoParameters}type Subject = Call<Construct<typeof Cart>, "total">;`],
+        expected: "(new Cart()).total()",
+      ],
+    ]
   >;
 
   /** an awaited receiver is parenthesised before its method is called */
@@ -253,10 +271,12 @@ const arity = (cx: EmitContext, node: ts.TypeReferenceNode, n: number): Expr =>
 const callee = (cx: EmitContext, node: ts.TypeNode): Expr =>
   ts.isTypeQueryNode(node) ? lowerName(cx, node.exprName) : lowerExpr(cx, node);
 
-const args = (cx: EmitContext, node: ts.TypeNode): Expr[] =>
-  ts.isTupleTypeNode(node)
+const args = (cx: EmitContext, node: ts.TypeNode | undefined): Expr[] => {
+  if (!node) return [];
+  return ts.isTupleTypeNode(node)
     ? elements(node).map((e) => lowerExpr(cx, e))
     : [cx.unsupported(node)];
+};
 
 // or whatever the checker folds it to
 export const literalText = (cx: EmitContext, node: ts.TypeNode): string =>
@@ -274,22 +294,22 @@ function lowerIntrinsic(
   const [a0, a1, a2] = node.typeArguments ?? [];
   switch (dsl) {
     case "Invoke":
-      return a0 && a1
+      return a0
         ? {
             kind: "call",
             callee: callee(cx, a0),
             args: args(cx, a1),
             awaited: returnsThenable(cx, typeOfCallee(cx, a0)),
           }
-        : arity(cx, node, 2);
+        : arity(cx, node, 1);
     case "Construct":
-      return a0 && a1
+      return a0
         ? { kind: "construct", callee: callee(cx, a0), args: args(cx, a1) }
-        : arity(cx, node, 2);
+        : arity(cx, node, 1);
     case "Mocked":
       return a0 ? { kind: "mocked", inner: lowerExpr(cx, a0) } : arity(cx, node, 1);
     case "Call": {
-      if (!a0 || !a1 || !a2) return arity(cx, node, 3);
+      if (!a0 || !a1) return arity(cx, node, 2);
       const method = literalText(cx, a1);
       return {
         kind: "method",

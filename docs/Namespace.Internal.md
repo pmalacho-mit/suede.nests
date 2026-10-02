@@ -350,6 +350,21 @@ Conditions valid on arrays and typed arrays.
 
 ***
 
+## CalleeFor
+
+> **CalleeFor**\<`Args`\> = \[\] *extends* `Args` ? () => `unknown` : [`AnyFn`](#anyfn)
+
+What a callee must be for `Args`: omitting them, or passing `[]`, is only
+allowed of a callee that has no required parameters.
+
+### Type Parameters
+
+#### Args
+
+`Args`
+
+***
+
 ## ClassRef
 
 > **ClassRef** = [`AnyCtor`](#anyctor) \| `Error`
@@ -378,6 +393,20 @@ All conditions applicable to a value of type `T`.
 ## Config
 
 > **Config** = `Partial`\<\{ `cwd`: `string`; `display`: [`DisplayPage`](#displaypage); `displayMeta`: \{\[`key`: `string`\]: [`Literal`](#literal); \}; `environment`: `"node"` \| `"browser"`; `retries`: `number`; `timeout`: `number`; \}\>
+
+***
+
+## ConstructorFor
+
+> **ConstructorFor**\<`Args`\> = \[\] *extends* `Args` ? () => `unknown` : [`AnyCtor`](#anyctor)
+
+`CalleeFor`, for a class.
+
+### Type Parameters
+
+#### Args
+
+`Args`
 
 ***
 
@@ -479,15 +508,19 @@ The set of JavaScript values that can be written as a TypeScript literal type.
 
 ***
 
-## MethodsOf
+## MethodsCallableWith
 
-> **MethodsOf**\<`T`\> = `{ [K in keyof T]-?: T[K] extends AnyFn ? K : never }`\[keyof `T`\] & `string`
+> **MethodsCallableWith**\<`T`, `Args`\> = `{ [K in keyof T]-?: T[K] extends CalleeFor<Args> ? K : never }`\[keyof `T`\] & `string`
 
 ### Type Parameters
 
 #### T
 
 `T`
+
+#### Args
+
+`Args`
 
 ***
 

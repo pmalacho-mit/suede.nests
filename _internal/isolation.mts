@@ -17,23 +17,23 @@ const localTally = (): number => local;
 declare namespace Isolation {
   /** a dependency's state is the test's own … */
   export type DependencyFirst = Given<
-    Invoke<typeof bump, []>,
-    Expect<Invoke<typeof tally, []>, "=", 1>
+    Invoke<typeof bump>,
+    Expect<Invoke<typeof tally>, "=", 1>
   >;
 
   export type DependencySecond = Given<
-    Invoke<typeof bump, []>,
-    Expect<Invoke<typeof tally, []>, "=", 1>
+    Invoke<typeof bump>,
+    Expect<Invoke<typeof tally>, "=", 1>
   >;
 
   /** … and so is state in the module under test */
   export type ModuleFirst = Given<
-    Invoke<typeof bumpLocal, []>,
-    Expect<Invoke<typeof localTally, []>, "=", 1>
+    Invoke<typeof bumpLocal>,
+    Expect<Invoke<typeof localTally>, "=", 1>
   >;
 
   export type ModuleSecond = Given<
-    Invoke<typeof bumpLocal, []>,
-    Expect<Invoke<typeof localTally, []>, "=", 1>
+    Invoke<typeof bumpLocal>,
+    Expect<Invoke<typeof localTally>, "=", 1>
   >;
 }

@@ -831,9 +831,9 @@ declare namespace testFunction {
   type Suite = `
     const one = () => 1;
     declare namespace one {
-      export type Focused = Only<SkipIfNotFound<"./absent.json", Expect<Invoke<typeof one, []>, "=", 1>>>;
+      export type Focused = Only<SkipIfNotFound<"./absent.json", Expect<Invoke<typeof one>, "=", 1>>>;
       export type Rows = SkipIfNotFound<"./absent.json", Table<typeof one, [[args: [], expected: 1]]>>;
-      export type Skipped = Skip<SkipIfNotFound<"./absent.json", Expect<Invoke<typeof one, []>, "=", 1>>>;
+      export type Skipped = Skip<SkipIfNotFound<"./absent.json", Expect<Invoke<typeof one>, "=", 1>>>;
     }
   `;
 
