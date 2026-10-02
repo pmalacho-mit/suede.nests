@@ -3,11 +3,12 @@
 Vendored at `.suede/core` on your dependency's **`release`** branch — which
 means it ships, and a consumer who installs your dependency finds these at
 `<dependency>/.suede/core/`. They are the tools for working with an installed
-dependency.
+dependency. All of them are bash, written for the bash macOS ships (3.2), and
+none of them takes a target: each acts on the dependency it lives inside.
 
-The maintainer's half (the publish guard, `vendor`, the project-wide divergence
-audit and the installer itself) is vendored from `dependency/main/core` onto
-`main`, at the same path.
+The maintainer's half (the publish guard, `extract`, `list`, the project-wide
+divergence audit) is vendored from `dependency/main/core` onto `main`, at the
+same path.
 
 This folder is a [git-subrepo](https://github.com/ingydotnet/git-subrepo) of the
 suede library, so you get fixes by pulling. **From `main`**, where it lives at
@@ -16,90 +17,65 @@ suede library, so you get fixes by pulling. **From `main`**, where it lives at
 out:
 
 ```bash
-git subrepo pull release/.suede/core
+bash .suede/core/sync.sh          # updates this and every other suede subrepo
 ```
 
-That leaves two things behind which stop the next `git subrepo push release`: a
-branch `subrepo/release/%2esuede/core` (refs are directories, so `subrepo/release`
-becomes uncreatable) and a scratch directory under `.git/tmp/subrepo/release`
-(where the push wants its worktree). `push-release.sh` clears both on every
-publish, so CI is fine; if you publish by hand, clear them yourself first:
+(`sync.sh` also clears the two leftovers a pull of a subrepo nested under
+`release/` leaves behind, which would otherwise stop the next publish.)
+
+## [deps.sh](./deps.sh)
+
+What **this dependency needs beside it**, and the exact commands that would
+put it there.
 
 ```bash
-git subrepo clean release/.suede/core && rm -rf .git/tmp/subrepo
+bash <dependency>/.suede/core/deps.sh            # the recipe
+bash <dependency>/.suede/core/deps.sh --check    # exit 1 if anything is unresolved
+bash <dependency>/.suede/core/deps.sh --in <dir> # act on the dependency at <dir>
 ```
 
-## [upstream](./upstream)
+A dependency publishes its own dependencies as records in
+`.suede/.dependencies/`: one `<sibling>.gitrepo` per dependency, naming the
+folder it expects to find **next to itself** (`<dependency>/../<sibling>`) and
+the remote and commit that folder should hold. `deps.sh` reads those records,
+looks at the disk, and for each one tells you one of:
 
-Propose this dependency's **local changes back to the library**, as a reviewable
-PR against the library's `main`.
+| Outcome | Meaning | What it prints |
+| --- | --- | --- |
+| **satisfied** | the sibling is there and points at the right repository | the commit, and whether it matches the pin |
+| **reuse** | missing, but the same repository is already installed somewhere in your repo at the same commit with no local changes | one `ln -s` |
+| **decide** | missing, and what you have installed differs from what is asked for | the `diff --at` that shows the difference, then both options: link to what you have, or install the exact commit under another name |
+| **install** | nothing is installed | the install command and the `ln -s` |
 
-Use it when you've edited a vendored dependency in place and want those edits to
-become a contribution to the library itself (rather than living only in your repo).
+It **recurses**: a dependency it would have you install has dependencies of its
+own, and you see all of them up front — numbered `[1]`, `[1.1]`, `[2]` — rather
+than one install at a time. A pin two dependents share is installed once and
+linked twice ("same install as [1.1]"). Every command is meant to be run from
+your repository root, and **nothing is done for you**: the script only reads.
+The installer runs it for you at the end of every install.
 
-### Usage
+`--check` is the publish guard's mode: no network, no recursion into
+dependencies you have not installed, and exit `1` the moment a record is not
+satisfied. A sibling that resolves to the right repository at a *different*
+commit is satisfied — you chose that resolution — but the readout says so in
+so many words and prints the `diff --at <commit>` that shows what differs
+between the commit the dependency was built against and what you have.
 
-```bash
-<dependency>/.suede/core/upstream        # if executable
-bash <dependency>/.suede/core/upstream   # otherwise
-```
+A **vendored** dependency (one installed inside `release/`) is held to one more
+rule: its siblings have to be inside `release/` too, because a link out of
+`release/` reaches consumers broken. `deps.sh` places those installs inside
+`release/` and refuses to offer a copy from outside it.
 
-First commit the changes you want to send — the working tree must be clean.
-
-### What it does
-
-1. Splits the dependency's local commits out via `git subrepo` and pushes them to
-   a deterministic branch on the library's remote:
-   `downstream/<owner>/<repo>-<your-commit>`.
-2. The library's `suede-downstream-to-main` workflow rebuilds that branch as a
-   `main`-shaped PR head and opens the pull request for the maintainers to test,
-   fix, and merge.
-3. Your local state is restored afterward, so a later `git subrepo pull` stays
-   safe. The `release` branch is **never** modified, so other consumers are
-   unaffected.
-
-Each commit becomes its own snapshot/branch/PR; re-running on the same commit is a
-no-op (it detects the already-open proposal).
-
-### Notes
-
-- It's a thin bootstrapper: the real logic is hosted at `https://suede.sh/upstream`
-  so it can evolve without re-shipping dependencies. Override the host (for forks
-  or testing) with `SUEDE_UPSTREAM_URL`.
-- Requires `git`, `curl`, and [`git-subrepo`](https://github.com/ingydotnet/git-subrepo).
-- Pass `-r`/`--remote <name>` to push to a remote other than the one tracked in
-  the dependency's `.gitrepo`.
-
-## [sync](./sync)
-
-`git subrepo pull` for **this** dependency, runnable from any working directory.
-
-```bash
-<dependency>/.suede/core/sync        # if executable
-bash <dependency>/.suede/core/sync
-```
-
-Like [`upstream`](./upstream), it takes no target: the dependency it pulls is
-the one containing the script. Anything you do pass is handed straight to
-`git subrepo pull`, so `sync --force` and the rest of git-subrepo's options
-work as documented there.
-
-Two things it does that a bare `git subrepo pull` will not: it runs from the
-repository root with a root-relative path, so where you are does not matter; and
-it resolves symlinks to the real folder first, because `git subrepo pull`
-on a symlink path fails outright — and the edge entries suede creates between
-your dependencies are symlinks by default.
-
-`git subrepo pull` also requires a clean working tree, while installing does
-not. If you have just installed something, commit before syncing.
+Needs `git`, and the [`diff`](#diff) beside it for the reuse check.
 
 ## [diff](./diff)
 
-What your copy of this dependency differs from — in either direction.
+What your copy of this dependency differs from — in any of three directions.
 
 ```bash
-bash <dependency>/.suede/core/diff          # what you would propose
-bash <dependency>/.suede/core/diff --sync   # what you would receive
+bash <dependency>/.suede/core/diff                # what you would propose
+bash <dependency>/.suede/core/diff --sync         # what you would receive
+bash <dependency>/.suede/core/diff --at <commit>  # against some other commit
 ```
 
 By default the pinned commit is on the left and your working tree on the right,
@@ -109,30 +85,76 @@ remote's `release` branch on the right, so `+` lines are incoming: this is what
 [`sync`](#sync) would bring you. `--sync` also names the two commits, and says
 so outright when your pin *is* the tip and a sync would bring nothing.
 
-A sync merges rather than overwrites, so under `--sync` the `-` lines are your
-own local work — which a sync keeps, and which is why they are labelled rather
-than left to be read as deletions.
+`--at <commit>` puts that commit on the left instead of your pin. This is how
+you compare what you have against what *another* dependency asks for; `deps.sh`
+prints the exact command when it finds such a case.
+
+`--in <dir>` acts on the dependency at `<dir>` instead of the one containing the
+script — the one exception to "no target", so that `deps.sh` and the publish
+guard can reuse a single copy for every dependency in a tree.
 
 Your side is the files as they are on disk: uncommitted edits and files you
 have only just created are in, and anything your `.gitignore` excludes is out.
 `.gitrepo` is dropped from both sides — it is local bookkeeping and always
 differs.
 
-Anything else you pass goes to `git diff`, so `--stat`, `--name-only` and `-w`
-work as usual. Exit codes are `0` for no difference and `1` for a difference,
-as `git diff` reports them, with `2` reserved for "could not run at all" so a
-caller can tell an answer from a failure.
+Anything else you pass goes to `git diff`, so `--stat`, `--name-only`,
+`--quiet` and `-w` work as usual. Exit codes are `0` for no difference and `1`
+for a difference, as `git diff` reports them, with `2` reserved for "could not
+run at all" so a caller can tell an answer from a failure.
 
-Unlike its neighbours it needs no git-subrepo — just `git` and the ability to
-reach the remote.
+Needs only `git` and the ability to reach the remote; git-subrepo is not
+required.
 
-> The maintainer's side has a `diff.sh` of its own, vendored onto `main`. That
-> one audits *every* release dependency of a project against its pin before a
-> publish. This one is about the single dependency it ships inside.
+## [sync](./sync)
+
+`git subrepo pull` for **this** dependency, runnable from any working directory.
+
+```bash
+bash <dependency>/.suede/core/sync
+```
+
+Anything you pass is handed straight to `git subrepo pull`, so `sync --force`
+and the rest of git-subrepo's options work as documented there.
+
+Two things it does that a bare `git subrepo pull` will not: it runs from the
+repository root with a root-relative path, so where you are does not matter;
+and it resolves symlinks to the real folder first, because `git subrepo pull`
+on a symlink path fails outright — and the edge entries between your
+dependencies are symlinks.
+
+`git subrepo pull` also requires a clean working tree, while installing does
+not. If you have just installed something, commit before syncing.
+
+## [upstream](./upstream)
+
+Propose this dependency's **local changes back to the library**, as a reviewable
+PR against the library's `main`.
+
+```bash
+bash <dependency>/.suede/core/upstream
+```
+
+First commit the changes you want to send — the working tree must be clean.
+
+1. Splits the dependency's local commits out via `git subrepo` and pushes them to
+   a deterministic branch on the library's remote:
+   `downstream/<owner>/<repo>-<your-commit>`.
+2. The library's `suede-downstream-to-main` workflow rebuilds that branch as a
+   `main`-shaped PR head and opens the pull request for the maintainers to test,
+   fix, and merge.
+3. Your local state is restored afterward, so a later `sync` stays safe. The
+   `release` branch is **never** modified, so other consumers are unaffected.
+
+Each commit becomes its own proposal; re-running on the same commit is a no-op.
+Pass `-r`/`--remote <name>` to push to a remote other than the one tracked in
+the dependency's `.gitrepo`. It is a thin bootstrapper: the real logic is hosted
+at `https://suede.sh/upstream` (override with `SUEDE_UPSTREAM_URL`). Requires
+`git`, `curl` and git-subrepo.
 
 ## If `git subrepo` is not found
 
-Both scripts need it, and both look in one more place before giving up: if
-`GIT_SUBREPO_ROOT` is set, they source `$GIT_SUBREPO_ROOT/.rc` to bring the
-command into scope. That covers an install — a devcontainer feature, a login
-shell profile — whose `PATH` a non-interactive script never inherited.
+`sync` and `upstream` need it, and both look in one more place before giving
+up: if `GIT_SUBREPO_ROOT` is set, they source `$GIT_SUBREPO_ROOT/.rc` to bring
+the command into scope. That covers an install — a devcontainer feature, a
+login shell profile — whose `PATH` a non-interactive script never inherited.

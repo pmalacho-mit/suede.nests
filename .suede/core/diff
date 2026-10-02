@@ -4,8 +4,9 @@
 #
 # What your copy of this dependency differs from, in either direction:
 #
-#     bash <dependency>/.suede/core/diff          # what you would propose
-#     bash <dependency>/.suede/core/diff --sync   # what you would receive
+#     bash <dependency>/.suede/core/diff                # what you would propose
+#     bash <dependency>/.suede/core/diff --sync         # what you would receive
+#     bash <dependency>/.suede/core/diff --at <commit>  # against some other commit
 #
 # Default: the commit this dependency's `.gitrepo` names on the left, your
 # working tree on the right - so `+` lines are yours, and what you are looking
@@ -15,9 +16,17 @@
 # release branch on the right - so `+` lines are incoming, and what you are
 # looking at is what `sync` would bring you.
 #
-# Like `sync` and `upstream` it takes no target: the dependency is the one
-# containing this script. Anything else you pass goes to `git diff`, so
-# `--stat`, `--name-only`, `-w` and the rest work as usual.
+# --at <commit>: that commit on the left instead of the pinned one. This is
+# how you compare what you have against what another dependency asks for -
+# `deps.sh` prints the exact command when it finds such a case.
+#
+# --in <dir>: act on the dependency at <dir> instead of the one containing
+# this script. Everything else that ships in .suede/core takes no target; this
+# flag exists so `deps.sh` and the publish guard can reuse one copy of the
+# script for every dependency in a tree.
+#
+# Anything else you pass goes to `git diff`, so `--stat`, `--name-only`,
+# `--quiet`, `-w` and the rest work as usual.
 #
 # Your side is the files as they are on disk - uncommitted edits and new files
 # included, and whatever your .gitignore excludes left out. `.gitrepo` is
@@ -39,28 +48,36 @@ die() { printf 'diff: %s\n' "$*" >&2; exit 2; }
 note() { printf 'diff: %s\n' "$*" >&2; }
 
 SYNC=0
+AT=""
+IN=""
 ARGS=()
-for argument in "$@"; do
-  case "$argument" in
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     -h|--help) usage ;;
-    --sync)    SYNC=1 ;;
+    --sync)    SYNC=1; shift ;;
+    --at)      [[ -n "${2-}" ]] || die "--at needs a commit"; AT="$2"; shift 2 ;;
+    --in)      [[ -n "${2-}" ]] || die "--in needs a directory"; IN="$2"; shift 2 ;;
     # The two sides are ours to name, so a `--` of yours would only collide
     # with the one below. Dropping it lets `diff -- --stat` mean what it looks
     # like it means.
-    --)        ;;
-    *)         ARGS+=("$argument") ;;
+    --)        shift ;;
+    *)         ARGS+=("$1"); shift ;;
   esac
 done
+[[ "$SYNC" == 1 && -n "$AT" ]] && die "--sync and --at name two different right-hand sides; pick one"
 
 command -v git >/dev/null 2>&1 || die "git not found"
 
-SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd -P)" \
-  || die "cannot resolve script location"
-
-# The dependency root is exactly two levels up (<dep>/.suede/core/diff), and
-# `pwd -P` above has already resolved whatever symlink the caller came through.
-DEP_DIR="$(cd "$SELF_DIR/../.." >/dev/null 2>&1 && pwd -P)" \
-  || die "cannot resolve dependency root above $SELF_DIR"
+if [[ -n "$IN" ]]; then
+  DEP_DIR="$(cd "$IN" >/dev/null 2>&1 && pwd -P)" || die "no such directory: $IN"
+else
+  SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd -P)" \
+    || die "cannot resolve script location"
+  # The dependency root is exactly two levels up (<dep>/.suede/core/diff), and
+  # `pwd -P` above has already resolved whatever symlink the caller came through.
+  DEP_DIR="$(cd "$SELF_DIR/../.." >/dev/null 2>&1 && pwd -P)" \
+    || die "cannot resolve dependency root above $SELF_DIR"
+fi
 [[ -f "$DEP_DIR/.gitrepo" ]] \
   || die "no .gitrepo at $DEP_DIR - is this inside an installed suede dependency?"
 
@@ -73,7 +90,7 @@ COMMIT="$(field commit)"
 BRANCH="$(field branch)"
 BRANCH="${BRANCH:-release}"
 [[ -n "$REMOTE" ]] || die "$DEP_DIR/.gitrepo names no remote"
-[[ -n "$COMMIT" || "$SYNC" == 1 ]] || die "$DEP_DIR/.gitrepo names no commit"
+[[ -n "$COMMIT" || "$SYNC" == 1 || -n "$AT" ]] || die "$DEP_DIR/.gitrepo names no commit"
 
 WORKSPACE="$(mktemp -d)"
 trap 'rm -rf "$WORKSPACE"' EXIT
@@ -128,6 +145,14 @@ if [[ "$SYNC" == 1 ]]; then
   else
     note "pinned ${COMMIT:0:7} -> tip of $BRANCH ${REFERENCE_COMMIT:0:7}"
     note "+ is what the tip has and you do not (incoming); - is what you have and it does not (yours, which a sync keeps)"
+  fi
+elif [[ -n "$AT" ]]; then
+  fetch_reference "$WORKSPACE/pinned" "$AT"
+  LEFT="pinned"; RIGHT="local"
+  if [[ "$REFERENCE_COMMIT" == "$COMMIT" ]]; then
+    note "against ${REFERENCE_COMMIT:0:7}, which is also your pin - + is yours"
+  else
+    note "against ${REFERENCE_COMMIT:0:7} (your pin is ${COMMIT:0:7}) - + is what you have that it does not"
   fi
 else
   fetch_reference "$WORKSPACE/pinned" "$COMMIT"
