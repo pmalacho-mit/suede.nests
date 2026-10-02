@@ -1,5 +1,9 @@
 {
   "private": true,
+  "workspaces": [
+    "release",
+    "release/vscode-extension"
+  ],
   "devDependencies": {
     "@jridgewell/trace-mapping": "^0.3.31",
     "@types/node": "^24.19.0",
