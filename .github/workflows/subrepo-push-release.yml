@@ -1,9 +1,10 @@
 name: subrepo-push-release
 #
 # Lives on `main`. Fires when a change under release/ lands. Everything it does
-# is in .suede/core/push-release.sh: refresh the dependency manifest, refuse to
-# publish a dishonest pointer (a diverged release dependency, or an edge
-# resolved implicitly), then sync ./release out to the `release` branch.
+# is in .suede/core/push-release.sh: refresh the dependency records, refuse to
+# publish a dishonest pointer (a diverged release dependency, or a declared
+# dependency that is not in place), then sync ./release out to the `release`
+# branch.
 #
 # This file only wires up credentials and the two third-party tools. Keeping
 # the logic in a script is what makes it testable without a runner.
@@ -28,10 +29,6 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.9"
 
       - name: Configure git
         run: |
