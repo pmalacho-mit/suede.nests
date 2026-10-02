@@ -1,4 +1,4 @@
-# Typescript Namespace Tests Suede
+# nests: Tests as Typescript Namespaces
 
 This repo is a [suede dependency](https://github.com/pmalacho-mit/suede). 
 
