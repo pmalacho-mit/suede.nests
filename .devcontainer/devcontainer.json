@@ -1,8 +1,5 @@
 {
   "customizations": {
-    "desolate": {
-      "allowPrivileged": true
-    },
     "vscode": {
       "extensions": [
         "anthropic.claude-code",
@@ -27,12 +24,8 @@
     }
   },
   "features": {
-    "ghcr.io/devcontainers/features/docker-in-docker:4": {},
     "ghcr.io/devcontainers/features/node:latest": {
       "version": "24"
-    },
-    "ghcr.io/devcontainers/features/python:latest": {
-      "version": "3.12"
     },
     "ghcr.io/guiyomh/features/vim:0": {},
     "ghcr.io/pmalacho-mit/devcontainer-features/git-subrepo:latest": {}
