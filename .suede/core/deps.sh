@@ -180,17 +180,50 @@ visited() { grep -qxF -- "$1" <<<"$VISITED"; }
 
 # --- the other side of the network ------------------------------------------
 
+# The ways to reach one repository, the recorded one first. An installed
+# dependency records the SSH spelling, because that is the one `upstream` can
+# push through; a machine with no key - a CI runner, a fresh container - reaches
+# the same public repository over HTTPS. So fetch from what is recorded, and
+# fall back to the other spelling. A local path, or an address carrying a port,
+# has one spelling: itself.
+spellings() { # <url>
+  local url="$1" rest host path
+  printf '%s\n' "$url"
+  case "$url" in
+    https://*|http://*) rest="${url#*://}"; rest="${rest#*@}"; host="${rest%%/*}"; path="${rest#*/}" ;;
+    ssh://*)            rest="${url#ssh://}"; rest="${rest#*@}"; host="${rest%%/*}"; path="${rest#*/}" ;;
+    *@*:*)              rest="${url#*@}"; host="${rest%%:*}"; path="${rest#*:}" ;;
+    *)                  return 0 ;;
+  esac
+  [[ -n "$host" && -n "$path" && "$host" != *:* ]] || return 0
+  path="${path%/}"; path="${path%.git}"
+  case "$url" in
+    https://*|http://*) printf 'git@%s:%s.git\n' "$host" "$path" ;;
+    *)                  printf 'https://%s/%s.git\n' "$host" "$path" ;;
+  esac
+}
+
+# Our own fetches fail fast and never ask anyone anything: no password prompt,
+# no host-key question, five seconds to connect.
+export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes -o ConnectTimeout=5}"
+export GIT_TERMINAL_PROMPT=0
+
 # The manifest of a dependency that is not installed, fetched at the commit a
 # record asks for. Only `.suede/.dependencies/*.gitrepo` is materialised.
 fetch_manifest() { # <remote> <commit> <branch> <destination>
-  local remote="$1" commit="$2" branch="${3:-release}" dest="$4" scratch name
+  local remote="$1" commit="$2" branch="${3:-release}" dest="$4" scratch name url reached=""
   scratch="$WORKSPACE/fetch-$$-$RANDOM"
   mkdir -p "$dest"
   git init --quiet "$scratch"
-  git -C "$scratch" remote add origin "$remote"
-  git -C "$scratch" fetch --quiet --depth 1 origin "$commit" 2>/dev/null \
-    || git -C "$scratch" fetch --quiet origin "refs/heads/$branch" 2>/dev/null \
-    || { rm -rf "$scratch"; return 1; }
+  while IFS= read -r url; do
+    git -C "$scratch" remote remove origin 2>/dev/null || true
+    git -C "$scratch" remote add origin "$url"
+    git -C "$scratch" fetch --quiet --depth 1 origin "$commit" 2>/dev/null \
+      || git -C "$scratch" fetch --quiet origin "refs/heads/$branch" 2>/dev/null \
+      || continue
+    reached="$url"; break
+  done < <(spellings "$remote")
+  [[ -n "$reached" ]] || { rm -rf "$scratch"; return 1; }
   git -C "$scratch" cat-file -e "$commit^{commit}" 2>/dev/null || { rm -rf "$scratch"; return 1; }
   while IFS= read -r name; do
     [[ "$name" == *.gitrepo ]] || continue
