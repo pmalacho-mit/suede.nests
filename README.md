@@ -487,6 +487,23 @@ editor reads, stay.
 that a run inside a run does not write over what the outer one wrote. There is
 no reason to set it otherwise.
 
+## Keeping nests optional for consumers
+
+Tests only ever `import type` the DSL, and a build erases them, so an app that
+installs your library as source should not also need nests. The import still has
+to type-check, though. From your library, run
+
+```bash
+bash <path-to-library>/scripts/install-optional-dependency-stub.sh src/lib   # any folder your tsconfig includes
+```
+
+and commit the `nests.d.ts` it writes, so it ships with your code. It declares
+`*/dsl.import.meta.vitest` (and the `.ts` spelling) as an ambient module with
+loose types. TypeScript consults it only when the import does not resolve to a
+file: without nests installed the project compiles and the tests are never
+collected; with nests installed at the imported path the real types win and the
+stub is inert.
+
 ## Scripts
 
 Run from the library's folder:
