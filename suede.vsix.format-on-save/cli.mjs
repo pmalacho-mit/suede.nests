@@ -1,0 +1,330 @@
+#!/usr/bin/env node
+// Ask the running editor about files, or have it format them by saving them.
+//
+//   node cli.mjs status <file or glob…>   is each open in a tab, does it have unsaved changes, does it format on save
+//   node cli.mjs format <file or glob…>   save each through the editor, so format-on-save runs as configured
+//   node cli.mjs format --last-commit     the same, for the files the last commit touched (`--commit <rev>` for
+//                                         another, or a range `A..B`), less those deleted or binary since
+//   node cli.mjs window [folder]          is the editor's window in front: { focused, active }; exits 0 when it
+//                                         is focused, 1 when not (a browser tab behind is throttled), 2 with no editor
+//
+// Quote a glob ('src/**/*.ts') so the shell leaves it to this; `--exclude <glob>` leaves out what it
+// matches, and node_modules is always left out. Prints a JSON array, one result per file in the
+// order given, and for `format` a summary on stderr. Exits 0 when every file is fine, 3 when some
+// were only skipped (`skipped: true`: "unsaved-changes", "format-on-save-off"), 1 when one failed
+// (`error` says why), 2 when no editor window has a file's folder open, and 64 for a usage error.
+import { execFileSync } from "node:child_process";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+
+// the same as the extension's
+const SOCKETS = path.join(
+  os.tmpdir(),
+  `vscode-format-on-save-${process.getuid?.() ?? os.userInfo().username}`,
+);
+
+// the same as the extension's `socketFor`
+const socketFor = (folder) =>
+  path.join(
+    SOCKETS,
+    `${crypto.createHash("sha1").update(path.resolve(folder)).digest("hex").slice(0, 16)}.sock`,
+  );
+
+/** Whether `SOCKETS` is this user's alone: a socket in a directory others can write to could be anyone's. */
+function ours() {
+  const stats = fs.lstatSync(SOCKETS, { throwIfNoEntry: false });
+  return (
+    !!stats?.isDirectory() &&
+    (!process.getuid ||
+      (stats.uid === process.getuid() && !(stats.mode & 0o077)))
+  );
+}
+
+/** The socket of the window whose workspace folder holds `file`: the nearest one above it. */
+function socketOf(file) {
+  for (let dir = path.dirname(path.resolve(file)); ; dir = path.dirname(dir)) {
+    const socket = socketFor(dir);
+    if (fs.existsSync(socket)) return socket;
+    if (path.dirname(dir) === dir) return null;
+  }
+}
+
+const ask = (socket, route, files) =>
+  new Promise((resolve, reject) => {
+    const request = http.request(
+      { socketPath: socket, path: route, method: "POST" },
+      (response) => {
+        let body = "";
+        response.on("data", (chunk) => (body += chunk));
+        response.on("end", () => {
+          try {
+            if (response.statusCode !== 200) throw new Error(body);
+            resolve(JSON.parse(body));
+          } catch (error) {
+            reject(error);
+          }
+        });
+      },
+    );
+    request.on("error", reject);
+    request.end(JSON.stringify({ files }));
+  });
+
+/** Resolves once `socket` exists, or with false after `within` milliseconds. */
+async function appears(socket, within) {
+  for (const deadline = Date.now() + within; Date.now() < deadline; ) {
+    if (fs.existsSync(socket)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return false;
+}
+
+/**
+ * Ask the window that answers on `socket`. A socket nothing answers on was left
+ * by a window that died: removing it lets a window still holding the folder
+ * take it back (each watches for that), and the question goes to that one.
+ */
+async function reach(socket, route, files) {
+  try {
+    return await ask(socket, route, files);
+  } catch (error) {
+    if (error.code !== "ECONNREFUSED" && error.code !== "ENOENT") throw error;
+    if (error.code === "ECONNREFUSED") fs.rmSync(socket, { force: true });
+    if (!(await appears(socket, 1000)))
+      throw new Error(
+        "the editor window that had this folder open is gone, and no other has it open",
+      );
+    return ask(socket, route, files);
+  }
+}
+
+const USAGE =
+  "usage: cli.mjs status|format [--exclude <glob>]… [--commit <rev or A..B>]… [--last-commit] <file or glob>…\n       cli.mjs window [folder]";
+const usage = (problem) => {
+  console.error(problem ? `${problem}\n${USAGE}` : USAGE);
+  process.exit(64);
+};
+
+const [command, ...rest] = process.argv.slice(2);
+
+// the window that has `folder` (here by default) open: whether it is in front
+if (command === "window") {
+  const folder = path.resolve(rest[0] ?? ".");
+  const socket = ours() && socketOf(path.join(folder, "_"));
+  try {
+    if (!socket) throw new Error(`no editor window has ${folder} open`);
+    const state = await reach(socket, "/window", []);
+    console.log(JSON.stringify(state, null, 2));
+    process.exit(state.focused ? 0 : 1);
+  } catch (error) {
+    console.log(
+      JSON.stringify(
+        { error: "no-editor", message: String(error.message ?? error) },
+        null,
+        2,
+      ),
+    );
+    process.exit(2);
+  }
+}
+
+if (!["status", "format"].includes(command)) usage();
+const inputs = [];
+const exclude = ["**/node_modules/**"];
+const commits = [];
+for (let i = 0; i < rest.length; i++) {
+  if (rest[i] === "--") {
+    inputs.push(...rest.slice(i + 1));
+    break;
+  }
+  if (rest[i] === "--exclude") {
+    if (i + 1 === rest.length) usage("--exclude needs a glob");
+    exclude.push(rest[++i]);
+  } else if (rest[i].startsWith("--exclude="))
+    exclude.push(rest[i].slice("--exclude=".length));
+  else if (rest[i] === "--commit") {
+    if (i + 1 === rest.length) usage("--commit needs a commit or a range");
+    commits.push(rest[++i]);
+  } else if (rest[i].startsWith("--commit="))
+    commits.push(rest[i].slice("--commit=".length));
+  else if (rest[i] === "--last-commit") commits.push("HEAD");
+  else inputs.push(rest[i]);
+}
+if (!inputs.length && !commits.length) usage();
+
+const git = (...args) => {
+  try {
+    return execFileSync("git", args, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      maxBuffer: 64 * 1024 * 1024,
+    });
+  } catch (error) {
+    usage(String(error.stderr || error.message).trim());
+  }
+};
+
+/**
+ * The text files a commit (or a range `A..B`) added or modified, absolute, that are still there. A
+ * merge counts against its first parent, so it names what it brought in. Binary files are left out,
+ * since the editor cannot open them as text.
+ */
+function touchedBy(rev) {
+  const root = git("rev-parse", "--show-toplevel").trim();
+  const numstat = rev.includes("..")
+    ? git(
+        "diff",
+        "--numstat",
+        "-z",
+        "--no-renames",
+        "--diff-filter=d",
+        rev,
+        "--",
+      )
+    : git(
+        "diff-tree",
+        "-r",
+        "--root",
+        "-m",
+        "--first-parent",
+        "--no-commit-id",
+        "--numstat",
+        "-z",
+        "--no-renames",
+        "--diff-filter=d",
+        rev,
+        "--",
+      );
+  // with -z and no renames: "added\tdeleted\tpath\0"; a binary file counts "-\t-"
+  return numstat
+    .split("\0")
+    .filter(Boolean)
+    .map((line) => line.split("\t"))
+    .filter(([added]) => added !== "-")
+    .map(([, , file]) => path.join(root, file))
+    .filter((file) => fs.existsSync(file));
+}
+
+// `**` does not reach into a dot-directory (.github/…), so a `**/…` exclude is tried on each tail of the path too
+const excluded = (file) => {
+  const parts = path.relative(process.cwd(), file).split(path.sep);
+  return exclude.some((pattern) =>
+    pattern.startsWith("**/")
+      ? parts.some((_, i) =>
+          path.matchesGlob(parts.slice(i).join("/"), pattern),
+        )
+      : path.matchesGlob(parts.join("/"), pattern),
+  );
+};
+
+// one slot per file to ask about, or per glob that matched none; each gets its `result`
+const slots = [];
+const seen = new Set();
+const GLOB = /[*?[\]{}]/;
+for (const rev of commits)
+  for (const file of touchedBy(rev)) {
+    if (seen.has(file) || excluded(file)) continue;
+    seen.add(file);
+    slots.push({ file });
+  }
+for (const input of inputs) {
+  let matches = [path.resolve(input)];
+  // a file named like a glob (Next.js's `[id].tsx`) is that file
+  if (GLOB.test(input) && !fs.existsSync(input)) {
+    if (!fs.globSync)
+      usage(
+        `globs need Node 22.14 or later; let the shell expand ${input} instead`,
+      );
+    matches = fs
+      .globSync(input, { exclude })
+      .map((match) => path.resolve(match))
+      .filter(
+        (match) =>
+          !excluded(match) &&
+          fs.statSync(match, { throwIfNoEntry: false })?.isFile(),
+      );
+    if (!matches.length)
+      slots.push({
+        result: {
+          pattern: input,
+          ok: false,
+          error: "no-match",
+          message: `no file matches ${input}`,
+        },
+      });
+  }
+  for (const file of matches) {
+    if (seen.has(file)) continue;
+    seen.add(file);
+    slots.push({ file });
+  }
+}
+
+// files grouped by the window that answers for them
+const bySocket = new Map();
+const trusted = ours();
+for (const slot of slots.filter((s) => !s.result)) {
+  const socket = trusted && socketOf(slot.file);
+  if (!socket)
+    slot.result = {
+      file: slot.file,
+      ok: false,
+      error: "no-editor",
+      message:
+        fs.existsSync(SOCKETS) && !trusted
+          ? `${SOCKETS} is not a directory only you can use, so no editor in it can be trusted`
+          : `no editor window has a folder holding ${slot.file} open`,
+    };
+  else bySocket.set(socket, [...(bySocket.get(socket) ?? []), slot]);
+}
+for (const [socket, group] of bySocket) {
+  try {
+    const answers = await reach(
+      socket,
+      `/${command}`,
+      group.map((slot) => slot.file),
+    );
+    group.forEach((slot, i) => (slot.result = answers[i]));
+  } catch (error) {
+    // no window holds the folder any more
+    for (const slot of group)
+      slot.result = {
+        file: slot.file,
+        ok: false,
+        error: "no-editor",
+        message: String(error.message ?? error),
+      };
+  }
+}
+const results = slots.map((slot) => slot.result);
+
+console.log(JSON.stringify(results, null, 2));
+if (command === "format") {
+  // what an agent or a person needs at a glance: what was skipped or failed, and why
+  const formatted = results.filter((r) => r.ok);
+  const lines = [
+    `formatted ${formatted.length} (${formatted.filter((r) => r.changed).length} changed)`,
+  ];
+  const why = Map.groupBy(
+    results.filter((r) => r.error),
+    (r) => `${r.skipped ? "skipped" : "failed"} (${r.error})`,
+  );
+  for (const [reason, group] of why)
+    lines.push(
+      `${reason}: ${group.map((r) => (r.file ? path.relative(process.cwd(), r.file) : r.pattern)).join(", ")}`,
+    );
+  console.error(lines.join("\n"));
+}
+const failed = (r) => r.error && !r.skipped;
+process.exit(
+  results.some((r) => r.error === "no-editor")
+    ? 2
+    : results.some(failed)
+      ? 1
+      : results.some((r) => r.skipped)
+        ? 3
+        : 0,
+);
