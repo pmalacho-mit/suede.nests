@@ -1,0 +1,18 @@
+import { test, expect, vi } from "vitest";
+
+// The cases examples/harnessed.ts needs a harness module for, said in the DSL
+// instead, and a few more of the same kind: what a test of real code reaches
+// for once its inputs stop being literals.
+
+const each = (xs: number[], visit: (x: number) => void) => {
+  for (const x of xs) visit(x);
+};
+
+/** each element is handed to the callback, in order, once */
+test("each > VisitsInOrder", () => {
+  const Visit = vi.fn();
+  each([1, 2, 3], Visit);
+  const actual = Visit.mock.calls;
+  const expected = [[1], [2], [3]];
+  expect(actual).toEqual(expected);
+});

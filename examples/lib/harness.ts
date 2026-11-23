@@ -2,12 +2,14 @@ import { onTestFinished, vi } from "vitest";
 
 import { debounce, each, retrying } from "../harnessed.ts";
 
+/** What the callback is handed, given `xs`. */
 export const callsOf = (xs: number[]) => {
   const visit = vi.fn();
   each(xs, visit);
   return visit.mock.calls;
 };
 
+/** How often a debounced function runs after `calls` calls in a burst. */
 export const debounced = (calls: number) => {
   vi.useFakeTimers();
   onTestFinished(() => void vi.useRealTimers());
@@ -30,7 +32,9 @@ export const fetchedTwice = async () => {
 
 export const fakeRates = { exchangeRate: () => 2, symbol: () => "€" };
 
-export const keepingTheRest = async (importOriginal: () => Promise<typeof import("./rates.ts")>) => ({
+export const keepingTheRest = async (
+  importOriginal: () => Promise<typeof import("./rates.ts")>,
+) => ({
   ...(await importOriginal()),
   exchangeRate: () => 4,
 });

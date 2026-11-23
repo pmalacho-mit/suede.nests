@@ -33,7 +33,13 @@
  *    Each test is emitted on its own, named for the dotted path it was
  *    written in (`add > Simple`).
  *
- * 3. JSDoc on a test alias becomes its human-readable description.
+ * 3. JSDoc on a test alias becomes its human-readable description: the
+ *    claim, in the terms of the code's purpose, not the assertion again. A
+ *    `/** … *\/` just before one row of a `Table` describes that row.
+ *
+ * 4. JSDoc tags (`@control`, `@standsIn`, `@realIn`, `@principle`,
+ *    `@requirement`, `@incident`) are kept with the test for the docs; none
+ *    changes what runs. A row's tags go on their own lines, after its text.
  *
  * ───────────────────────────────────────────────────────────────────────────
  * Evaluation model (what the plugin does with these types)
@@ -188,7 +194,9 @@ export declare namespace Internal {
   type CalleeFor<Args> = [] extends Args ? () => unknown : AnyFn;
 
   /** `CalleeFor`, for a class. */
-  type ConstructorFor<Args> = [] extends Args ? abstract new () => unknown : AnyCtor;
+  type ConstructorFor<Args> = [] extends Args
+    ? abstract new () => unknown
+    : AnyCtor;
 
   /** The arguments any of a function's overloads takes. */
   type ArgumentsOf<T> = Signatures<T>[0];
@@ -600,12 +608,18 @@ export declare namespace Internal {
                           ? Nothing | ClassRef | string | ThrowsMatcher
                           : never;
 
-  /** Object form of a `"throws"` expectation. All fields optional; all listed fields must match. */
+  /**
+   * Object form of a `"throws"` expectation. All fields optional; all listed
+   * fields must match. Any other field is one of the error's own, compared as
+   * `"matches"` compares (`{ code: 64 }`); for a typed check of those, assert
+   * on `Caught<…, YourError>` instead.
+   */
   interface ThrowsMatcher {
     readonly instanceOf?: ClassRef;
     readonly name?: string;
     readonly message?: string; // substring
     readonly matches?: string; // regex source
+    readonly [field: string]: unknown;
   }
 
   /** The page is loaded relative to the test file. */
@@ -786,6 +800,190 @@ export declare namespace Internal {
  * ```
  */
 export type Mocked<F extends Internal.AnyFn> = MockedFunction<F>;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Beyond literals — what a harness module used to be needed for
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Each of these is a value or an effect with one meaning, printed as the few
+// lines of Vitest it stands for. A test that uses them stays a test you can
+// read whole, and one the docs can say in words; a harness function is still
+// there for whatever these cannot say.
+
+/**
+ * The error an expression throws, or the reason the promise it returns
+ * rejects, as a value. The test fails if it does neither. Name the error's
+ * class as `E` to assert on the fields it has beyond a message:
+ *
+ * ```ts
+ * type Refused = Caught<Invoke<typeof clone, [repo: "acme"]>, Refusal>;
+ *
+ * export type SaysWhatToDo = Expect<Refused, "matches", { fix: "desolate doctor"; code: 64 }>;
+ * export type Message = Expect<Refused["message"], "includes", "acme">;
+ * ```
+ *
+ * Bind it to an alias to read several fields of the same error: an inline
+ * `Caught` written twice runs its expression twice.
+ */
+export type Caught<Expr, E = Error> = E | Internal.Phantom<Expr>;
+
+/**
+ * A recorded function: a `vi.fn()`, or `vi.fn(impl)` when an implementation is
+ * given. Pass it where the code takes a callback, then read what it was given
+ * with `Calls`. Bind it to an alias so the test and the code hold the same one.
+ *
+ * ```ts
+ * type Visit = Spy<(x: number) => void>;
+ *
+ * export type InOrder = Given<
+ *   Invoke<typeof each, [xs: [1, 2, 3], visit: Visit]>,
+ *   Expect<Calls<Visit>, "=", [[1], [2], [3]]>
+ * >;
+ * ```
+ */
+export type Spy<
+  F extends Internal.AnyFn = (...args: any[]) => any,
+  Impl extends F | undefined = undefined,
+> = MockedFunction<F> | Internal.Phantom<Impl>;
+
+/**
+ * The arguments of every call a `Spy` received, in order: one tuple per call.
+ *
+ * ```ts
+ * export type Twice = Given<
+ *   [Invoke<typeof notify, [send: Send]>, Invoke<typeof notify, [send: Send]>],
+ *   Expect<Calls<Send>["length"], "=", 2>
+ * >;
+ * ```
+ */
+export type Calls<
+  S extends { readonly mock: { readonly calls: readonly unknown[] } },
+> = S["mock"]["calls"];
+
+/**
+ * Fake timers for one test, as one of a `Given`'s effects: `setTimeout`,
+ * `setInterval` and `Date` are Vitest's fakes until the test ends. `Now` sets
+ * the clock (an ISO date or milliseconds since the epoch). Whatever its place
+ * among the effects, it applies before the test's code runs, as `Mock` does.
+ *
+ * ```ts
+ * export type OnceAfterABurst = Given<
+ *   [FakeTimers, Invoke<Debounced>, Invoke<Debounced>, AdvanceTimers<100>],
+ *   Expect<Calls<Run>["length"], "=", 1>
+ * >;
+ * ```
+ */
+export type FakeTimers<Now extends string | number | undefined = undefined> =
+  Internal.SetupNode<"fakeTimers", Now>;
+
+/**
+ * Move fake time forward, running every timer that falls due, as one of a
+ * `Given`'s effects. Needs `FakeTimers`.
+ *
+ * ```ts
+ * export type Fires = Given<[FakeTimers, Invoke<typeof later, [run: Run]>, AdvanceTimers<1_000>], Expect<Calls<Run>, "isNotEmpty">>;
+ * ```
+ */
+export type AdvanceTimers<Ms extends number> = Internal.EffectNode<
+  "advanceTimers",
+  Ms
+>;
+
+/**
+ * An environment variable set (or, as `undefined`, unset) for one test, and
+ * put back when it ends. Like `Mock`, it applies before the test's code runs.
+ *
+ * ```ts
+ * export type FakeBackend = Given<
+ *   StubEnv<"DESOLATE_BACKEND", "fake">,
+ *   Expect<Invoke<typeof backendKind>, "=", "fake">
+ * >;
+ * ```
+ */
+export type StubEnv<
+  Name extends string,
+  Value extends string | undefined,
+> = Internal.SetupNode<"stubEnv", [Name, Value]>;
+
+/**
+ * A fresh directory for one test, holding `Files` (paths relative to it, each
+ * with its text), and removed when the test ends. It evaluates to the
+ * directory's absolute path, so a path inside it is a template literal:
+ *
+ * ```ts
+ * type Dir = TempDir<{ "in/a.txt": "hello" }>;
+ *
+ * export type Copies = Given<
+ *   Invoke<typeof copy, [from: `${Dir}/in/a.txt`, to: `${Dir}/out.txt`]>,
+ *   [Expect<FromFile<`${Dir}/out.txt`>, "=", "hello">, Expect<ListDir<Dir>, "=", ["in", "out.txt"]>]
+ * >;
+ * ```
+ *
+ * Bind it to an alias: every mention of the alias is the same directory.
+ */
+export type TempDir<Files extends { readonly [path: string]: string } = {}> =
+  | string
+  | Internal.Phantom<Files>;
+
+/**
+ * Write a file, its directories made, as one of a `Given`'s effects: what
+ * something else left where the code will look.
+ *
+ * ```ts
+ * export type Rereads = Given<
+ *   [Invoke<typeof load, [dir: Dir]>, WriteFile<`${Dir}/config.json`, "{}">],
+ *   Expect<Invoke<typeof load, [dir: Dir]>, "=", {}>
+ * >;
+ * ```
+ */
+export type WriteFile<
+  Path extends string,
+  Text extends string,
+> = Internal.EffectNode<"writeFile", [Path, Text]>;
+
+/**
+ * Whether anything is at a path, read when the expectation runs.
+ *
+ * ```ts
+ * export type Removed = Given<Invoke<typeof clean, [dir: Dir]>, Expect<Exists<`${Dir}/cache`>, "falsy">>;
+ * ```
+ */
+export type Exists<Path extends string> = boolean | Internal.Phantom<Path>;
+
+/**
+ * The names in a directory, sorted, read when the expectation runs.
+ *
+ * ```ts
+ * export type Wrote = Given<Invoke<typeof save, [dir: Dir]>, Expect<ListDir<Dir>, "=", ["state.json"]>>;
+ * ```
+ */
+export type ListDir<Path extends string> = string[] | Internal.Phantom<Path>;
+
+/**
+ * `Text` repeated `Count` times: a value too long to write out, said by its
+ * length. Inside a template literal it builds one of a given shape.
+ *
+ * ```ts
+ * export type AtTheBound = Expect<Invoke<typeof isBranch, [value: `b${Repeat<"x", 199>}`]>, "truthy">;
+ * ```
+ */
+export type Repeat<Text extends string, Count extends number> =
+  | string
+  | Internal.Phantom<[Text, Count]>;
+
+export declare namespace Internal {
+  /** A `Given` effect that applies before the test's code runs: printed first, undone when the test ends. */
+  interface SetupNode<Kind extends string, Payload> extends Node<"setup"> {
+    readonly kind: Kind;
+    readonly payload: Payload;
+  }
+
+  /** A `Given` effect that runs where it is written. */
+  interface EffectNode<Kind extends string, Payload> extends Node<"effect"> {
+    readonly kind: Kind;
+    readonly payload: Payload;
+  }
+}
 
 /**
  * Parameterised tests: call `F` once per row and check the result.

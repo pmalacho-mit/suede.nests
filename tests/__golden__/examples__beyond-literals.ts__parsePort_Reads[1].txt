@@ -1,0 +1,30 @@
+import { test, expect } from "vitest";
+
+/** A refusal: what went wrong, what to do instead, and the exit code a script sees. */
+class Refusal extends Error {
+  readonly fix: string;
+  readonly code: number;
+  constructor(message: string, fix: string, code = 1) {
+    super(message);
+    this.fix = fix;
+    this.code = code;
+  }
+}
+
+/** A TCP port, from the text a person typed. */
+const parsePort = (text: string): number => {
+  const port = Number(text);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535)
+    throw new Refusal(
+      `'${text}' is not a port`,
+      "a whole number from 1 to 65535",
+      64,
+    );
+  return port;
+};
+
+test("parsePort > Reads[1]", () => {
+  const actual = parsePort("1");
+  const expected = 1;
+  expect(actual).toEqual(expected);
+});

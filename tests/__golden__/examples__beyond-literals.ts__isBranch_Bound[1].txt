@@ -1,0 +1,11 @@
+import { test, expect } from "vitest";
+
+/** A branch name desolate would carry: at most 200 characters. */
+const isBranch = (value: string) =>
+  /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value) && value.length <= 200;
+
+/** the control: the same shape, one character longer */
+test("isBranch > Bound[1]", () => {
+  const actual = isBranch(`b${"x".repeat(200)}`);
+  expect(actual).toEqual(false);
+});

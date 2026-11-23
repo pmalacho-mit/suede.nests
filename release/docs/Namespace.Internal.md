@@ -48,12 +48,42 @@ The evaluated result of `Expect`. You'll see this in hover text.
 
 > `readonly` **expected**: `Expected`
 
-***
+---
+
+## EffectNode
+
+A `Given` effect that runs where it is written.
+
+### Extends
+
+- [`Node`](#node)\<`"effect"`\>
+
+### Type Parameters
+
+#### Kind
+
+`Kind` _extends_ `string`
+
+#### Payload
+
+`Payload`
+
+### Properties
+
+#### kind
+
+> `readonly` **kind**: `Kind`
+
+#### payload
+
+> `readonly` **payload**: `Payload`
+
+---
 
 ## MissingExpected
 
 What `Expect<X, "=">` evaluates to: the expected value was omitted for a
-condition that needs one. This is deliberately *not* a `Test`, so it is a
+condition that needs one. This is deliberately _not_ a `Test`, so it is a
 compile error inside `Given`, `Skip`, `Only`, `Configure` or a `Table`, is
 obvious in hover text, and is reported by the runner as an authoring error.
 (TypeScript cannot reject an omitted type argument at the use site, so the
@@ -79,7 +109,7 @@ mistake is surfaced in the result type instead.)
 
 > `readonly` **error**: `"an expected value is required for this condition"`
 
-***
+---
 
 ## Modifier
 
@@ -93,7 +123,7 @@ Marker so the printer (and hover text) can identify DSL nodes by name.
 
 #### Kind
 
-`Kind` *extends* `string`
+`Kind` _extends_ `string`
 
 #### T
 
@@ -117,7 +147,7 @@ Marker so the printer (and hover text) can identify DSL nodes by name.
 
 > `readonly` **test**: `T`
 
-***
+---
 
 ## ModuleMock
 
@@ -147,7 +177,7 @@ Marker so the printer (and hover text) can identify DSL nodes by name.
 
 > `readonly` **with**: `With`
 
-***
+---
 
 ## Node
 
@@ -161,6 +191,8 @@ Marker so the printer (and hover text) can identify DSL nodes by name.
 - [`MissingExpected`](#missingexpected)
 - [`Sequence`](#sequence)
 - [`ModuleMock`](#modulemock)
+- [`SetupNode`](#setupnode)
+- [`EffectNode`](#effectnode)
 - [`TableNode`](#tablenode)
 - [`Modifier`](#modifier)
 
@@ -168,9 +200,9 @@ Marker so the printer (and hover text) can identify DSL nodes by name.
 
 #### Kind
 
-`Kind` *extends* `string`
+`Kind` _extends_ `string`
 
-***
+---
 
 ## NothingNode
 
@@ -180,7 +212,7 @@ Marker so the printer (and hover text) can identify DSL nodes by name.
 
 - [`Node`](#node)\<`"nothing"`\>
 
-***
+---
 
 ## Sequence
 
@@ -210,7 +242,37 @@ Marker so the printer (and hover text) can identify DSL nodes by name.
 
 > `readonly` **then**: `Then`
 
-***
+---
+
+## SetupNode
+
+A `Given` effect that applies before the test's code runs: printed first, undone when the test ends.
+
+### Extends
+
+- [`Node`](#node)\<`"setup"`\>
+
+### Type Parameters
+
+#### Kind
+
+`Kind` _extends_ `string`
+
+#### Payload
+
+`Payload`
+
+### Properties
+
+#### kind
+
+> `readonly` **kind**: `Kind`
+
+#### payload
+
+> `readonly` **payload**: `Payload`
+
+---
 
 ## SnapshotNode
 
@@ -224,7 +286,7 @@ Marker so the printer (and hover text) can identify DSL nodes by name.
 
 #### Name
 
-`Name` *extends* `string`
+`Name` _extends_ `string`
 
 ### Properties
 
@@ -232,7 +294,7 @@ Marker so the printer (and hover text) can identify DSL nodes by name.
 
 > `readonly` **name**: `Name`
 
-***
+---
 
 ## TableNode
 
@@ -262,11 +324,18 @@ Marker so the printer (and hover text) can identify DSL nodes by name.
 
 > `readonly` **rows**: `Rows`
 
-***
+---
 
 ## ThrowsMatcher
 
-Object form of a `"throws"` expectation. All fields optional; all listed fields must match.
+Object form of a `"throws"` expectation. All fields optional; all listed
+fields must match. Any other field is one of the error's own, compared as
+`"matches"` compares (`{ code: 64 }`); for a typed check of those, assert
+on `Caught<…, YourError>` instead.
+
+### Indexable
+
+> \[`field`: `string`\]: `unknown`
 
 ### Properties
 
@@ -286,7 +355,7 @@ Object form of a `"throws"` expectation. All fields optional; all listed fields 
 
 > `readonly` `optional` **name?**: `string`
 
-***
+---
 
 ## AnyCtor
 
@@ -302,7 +371,7 @@ Object form of a `"throws"` expectation. All fields optional; all listed fields 
 
 `any`
 
-***
+---
 
 ## AnyFn
 
@@ -318,7 +387,7 @@ Object form of a `"throws"` expectation. All fields optional; all listed fields 
 
 `any`
 
-***
+---
 
 ## ApproxCondition
 
@@ -326,7 +395,7 @@ Object form of a `"throws"` expectation. All fields optional; all listed fields 
 
 Approximate equality with an absolute tolerance: `["~=", 1e-9]`.
 
-***
+---
 
 ## ArgumentsOf
 
@@ -340,7 +409,7 @@ The arguments any of a function's overloads takes.
 
 `T`
 
-***
+---
 
 ## ArrayCondition
 
@@ -348,11 +417,11 @@ The arguments any of a function's overloads takes.
 
 Conditions valid on arrays and typed arrays.
 
-***
+---
 
 ## CalleeFor
 
-> **CalleeFor**\<`Args`\> = \[\] *extends* `Args` ? () => `unknown` : [`AnyFn`](#anyfn)
+> **CalleeFor**\<`Args`\> = \[\] _extends_ `Args` ? () => `unknown` : [`AnyFn`](#anyfn)
 
 What a callee must be for `Args`: omitting them, or passing `[]`, is only
 allowed of a callee that has no required parameters.
@@ -363,7 +432,7 @@ allowed of a callee that has no required parameters.
 
 `Args`
 
-***
+---
 
 ## ClassRef
 
@@ -374,11 +443,11 @@ type (`RangeError`). The printer resolves either spelling to the constructor.
 For `"instanceOf"` on non-error classes the actual's own instance type is
 also accepted: `Expect<Repo, "instanceOf", UserRepository>`.
 
-***
+---
 
 ## ConditionsFor
 
-> **ConditionsFor**\<`T`\> = [`UniversalCondition`](#universalcondition) \| `T` *extends* `number` ? [`OrderingCondition`](#orderingcondition) \| [`ApproxCondition`](#approxcondition) \| [`NumberCondition`](#numbercondition) : `never` \| `T` *extends* `bigint` \| `Date` ? [`OrderingCondition`](#orderingcondition) : `never` \| `T` *extends* `string` ? [`OrderingCondition`](#orderingcondition) \| [`StringCondition`](#stringcondition) : `never` \| `T` *extends* readonly `unknown`[] \| `ArrayBufferView` ? [`ArrayCondition`](#arraycondition) : `never` \| `T` *extends* `ReadonlySet`\<`unknown`\> ? [`ArrayCondition`](#arraycondition) : `never` \| `T` *extends* `ReadonlyMap`\<`unknown`, `unknown`\> ? `"isEmpty"` \| `"isNotEmpty"` : `never` \| `T` *extends* `object` ? `T` *extends* readonly `unknown`[] \| [`AnyFn`](#anyfn) ? `never` : [`ObjectCondition`](#objectcondition) : `never`
+> **ConditionsFor**\<`T`\> = [`UniversalCondition`](#universalcondition) \| `T` _extends_ `number` ? [`OrderingCondition`](#orderingcondition) \| [`ApproxCondition`](#approxcondition) \| [`NumberCondition`](#numbercondition) : `never` \| `T` _extends_ `bigint` \| `Date` ? [`OrderingCondition`](#orderingcondition) : `never` \| `T` _extends_ `string` ? [`OrderingCondition`](#orderingcondition) \| [`StringCondition`](#stringcondition) : `never` \| `T` _extends_ readonly `unknown`[] \| `ArrayBufferView` ? [`ArrayCondition`](#arraycondition) : `never` \| `T` _extends_ `ReadonlySet`\<`unknown`\> ? [`ArrayCondition`](#arraycondition) : `never` \| `T` _extends_ `ReadonlyMap`\<`unknown`, `unknown`\> ? `"isEmpty"` \| `"isNotEmpty"` : `never` \| `T` _extends_ `object` ? `T` _extends_ readonly `unknown`[] \| [`AnyFn`](#anyfn) ? `never` : [`ObjectCondition`](#objectcondition) : `never`
 
 All conditions applicable to a value of type `T`.
 
@@ -388,17 +457,17 @@ All conditions applicable to a value of type `T`.
 
 `T`
 
-***
+---
 
 ## Config
 
 > **Config** = `Partial`\<\{ `cwd`: `string`; `display`: [`DisplayPage`](#displaypage); `displayMeta`: \{\[`key`: `string`\]: [`Literal`](#literal); \}; `environment`: `"node"` \| `"browser"`; `retries`: `number`; `timeout`: `number`; \}\>
 
-***
+---
 
 ## ConstructorFor
 
-> **ConstructorFor**\<`Args`\> = \[\] *extends* `Args` ? () => `unknown` : [`AnyCtor`](#anyctor)
+> **ConstructorFor**\<`Args`\> = \[\] _extends_ `Args` ? () => `unknown` : [`AnyCtor`](#anyctor)
 
 `CalleeFor`, for a class.
 
@@ -408,11 +477,11 @@ All conditions applicable to a value of type `T`.
 
 `Args`
 
-***
+---
 
 ## DeepPartial
 
-> **DeepPartial**\<`T`\> = `T` *extends* (...`args`) => `unknown` ? `T` : `T` *extends* readonly infer Element[] ? `Element`[] *extends* `T` ? readonly [`DeepPartial`](#deeppartial)\<`Element`\>[] : `{ [Index in keyof T]: DeepPartial<T[Index]> }` : `T` *extends* `object` ? `{ [K in keyof T]?: DeepPartial<T[K]> }` : `T`
+> **DeepPartial**\<`T`\> = `T` _extends_ (...`args`) => `unknown` ? `T` : `T` _extends_ readonly infer Element[] ? `Element`[] _extends_ `T` ? readonly [`DeepPartial`](#deeppartial)\<`Element`\>[] : `{ [Index in keyof T]: DeepPartial<T[Index]> }` : `T` _extends_ `object` ? `{ [K in keyof T]?: DeepPartial<T[K]> }` : `T`
 
 Every key optional, at any depth — but a list stays a list. Mapping over a
 tuple keeps it a tuple, so an expected list written for a tuple actual is
@@ -425,7 +494,7 @@ array eagerly, and on a recursive type (a JSON value, say) that expansion
 never bottoms out ("type instantiation is excessively deep"). The tuple test
 is type-fest's: an array of the element type is assignable to a plain array
 and never to a tuple, whatever its optional or rest elements. `readonly`
-because this is only ever the type of an *expected* value, and a readonly
+because this is only ever the type of an _expected_ value, and a readonly
 target accepts a readonly or a mutable literal alike.
 
 A function is left as it is: a mapped type would keep its properties and
@@ -437,7 +506,7 @@ drop its call signature, so `{ onClick: () => void }` would accept anything.
 
 `T`
 
-***
+---
 
 ## DisplayPage
 
@@ -445,11 +514,11 @@ drop its call signature, so `{ onClick: () => void }` would accept anything.
 
 The page is loaded relative to the test file.
 
-***
+---
 
 ## ElementOf
 
-> **ElementOf**\<`T`\> = `T` *extends* readonly infer U[] ? `U` : `T` *extends* `ReadonlySet`\<infer U\> ? `U` : `T` *extends* `string` ? `string` : `T` *extends* `object` ? `U` : `never`
+> **ElementOf**\<`T`\> = `T` _extends_ readonly infer U[] ? `U` : `T` _extends_ `ReadonlySet`\<infer U\> ? `U` : `T` _extends_ `string` ? `string` : `T` _extends_ `object` ? `U` : `never`
 
 ### Type Parameters
 
@@ -457,11 +526,11 @@ The page is loaded relative to the test file.
 
 `T`
 
-***
+---
 
 ## Equatable
 
-> **Equatable**\<`T`\> = `T` \| `T` *extends* `object` ? readonly `E`[] : `never`
+> **Equatable**\<`T`\> = `T` \| `T` _extends_ `object` ? readonly `E`[] : `never`
 
 Typed arrays may be compared against plain tuples/arrays of their element type,
 so `Expect<Uint32Array, "=", [1, 2, 3]>` type-checks.
@@ -472,11 +541,11 @@ so `Expect<Uint32Array, "=", [1, 2, 3]>` type-checks.
 
 `T`
 
-***
+---
 
 ## ExpectedFor
 
-> **ExpectedFor**\<`Actual`, `Condition`\> = `Condition` *extends* [`NullaryCondition`](#nullarycondition) ? [`Nothing`](API.md#nothing) : `Condition` *extends* `"="` \| `"!="` \| `"is"` \| `"isNot"` ? [`Equatable`](#equatable)\<`Actual`\> : `Condition` *extends* [`OrderingCondition`](#orderingcondition) ? `Actual` : `Condition` *extends* [`ApproxCondition`](#approxcondition) ? `number` : `Condition` *extends* `"includes"` \| `"excludes"` ? [`ElementOf`](#elementof)\<`Actual`\> : `Condition` *extends* `"startsWith"` \| `"endsWith"` ? `string` : `Condition` *extends* `"matches"` ? `Actual` *extends* `string` ? `string` : [`DeepPartial`](#deeppartial)\<`Actual`\> : `Condition` *extends* `"some"` \| `"every"` ? (`element`, `index`) => `boolean` : `Condition` *extends* `"satisfies"` ? (`actual`) => `boolean` : `Condition` *extends* `"instanceOf"` ? ... \| ... : ... *extends* ... ? ... : ...
+> **ExpectedFor**\<`Actual`, `Condition`\> = `Condition` _extends_ [`NullaryCondition`](#nullarycondition) ? [`Nothing`](API.md#nothing) : `Condition` _extends_ `"="` \| `"!="` \| `"is"` \| `"isNot"` ? [`Equatable`](#equatable)\<`Actual`\> : `Condition` _extends_ [`OrderingCondition`](#orderingcondition) ? `Actual` : `Condition` _extends_ [`ApproxCondition`](#approxcondition) ? `number` : `Condition` _extends_ `"includes"` \| `"excludes"` ? [`ElementOf`](#elementof)\<`Actual`\> : `Condition` _extends_ `"startsWith"` \| `"endsWith"` ? `string` : `Condition` _extends_ `"matches"` ? `Actual` _extends_ `string` ? `string` : [`DeepPartial`](#deeppartial)\<`Actual`\> : `Condition` _extends_ `"some"` \| `"every"` ? (`element`, `index`) => `boolean` : `Condition` _extends_ `"satisfies"` ? (`actual`) => `boolean` : `Condition` _extends_ `"instanceOf"` ? ... \| ... : ... _extends_ ... ? ... : ...
 
 Shape the expected value must have for a given (Actual, Condition) pair.
 
@@ -490,7 +559,7 @@ Shape the expected value must have for a given (Actual, Condition) pair.
 
 `Condition`
 
-***
+---
 
 ## FileFormat
 
@@ -498,7 +567,7 @@ Shape the expected value must have for a given (Actual, Condition) pair.
 
 How a file's contents are decoded by `FromFile`.
 
-***
+---
 
 ## Literal
 
@@ -506,7 +575,7 @@ How a file's contents are decoded by `FromFile`.
 
 The set of JavaScript values that can be written as a TypeScript literal type.
 
-***
+---
 
 ## MethodsCallableWith
 
@@ -522,7 +591,7 @@ The set of JavaScript values that can be written as a TypeScript literal type.
 
 `Args`
 
-***
+---
 
 ## NullaryCondition
 
@@ -530,7 +599,7 @@ The set of JavaScript values that can be written as a TypeScript literal type.
 
 Conditions that take no expected value.
 
-***
+---
 
 ## NumberCondition
 
@@ -538,7 +607,7 @@ Conditions that take no expected value.
 
 Conditions valid on numbers.
 
-***
+---
 
 ## ObjectCondition
 
@@ -546,7 +615,7 @@ Conditions valid on numbers.
 
 Conditions valid on plain objects.
 
-***
+---
 
 ## OrderingCondition
 
@@ -554,7 +623,7 @@ Conditions valid on plain objects.
 
 Ordering conditions; valid for numbers, bigints, strings and Dates.
 
-***
+---
 
 ## Phantom
 
@@ -570,11 +639,11 @@ for the printer (`Args`, `Path`, …) from tripping `noUnusedParameters`.
 
 `T`
 
-***
+---
 
 ## ReturnFor
 
-> **ReturnFor**\<`T`, `Args`\> = [`Signatures`](#signatures)\<`T`\> *extends* infer Signature ? `Signature` *extends* \[infer Params, infer Result\] ? `Args` *extends* `Params` ? `Result` : `never` : `never` : `never`
+> **ReturnFor**\<`T`, `Args`\> = [`Signatures`](#signatures)\<`T`\> _extends_ infer Signature ? `Signature` _extends_ \[infer Params, infer Result\] ? `Args` _extends_ `Params` ? `Result` : `never` : `never` : `never`
 
 What the overload that accepts `Args` returns.
 
@@ -588,7 +657,7 @@ What the overload that accepts `Args` returns.
 
 `Args`
 
-***
+---
 
 ## Row
 
@@ -600,18 +669,18 @@ A row of a `Table`: `[args, expected]` (implied `"="`) or `[args, condition, exp
 
 #### F
 
-`F` *extends* [`AnyFn`](#anyfn)
+`F` _extends_ [`AnyFn`](#anyfn)
 
-***
+---
 
 ## Signatures
 
-> **Signatures**\<`T`\> = `T` *extends* \{(...`a`): `R1`; (...`a`): `R2`; (...`a`): `R3`; (...`a`): `R4`; \} ? \[`A1`, `R1`\] \| \[`A2`, `R2`\] \| \[`A3`, `R3`\] \| \[`A4`, `R4`\] : `T` *extends* \{(...`a`): `R1`; (...`a`): `R2`; (...`a`): `R3`; \} ? \[`A1`, `R1`\] \| \[`A2`, `R2`\] \| \[`A3`, `R3`\] : `T` *extends* \{(...`a`): `R1`; (...`a`): `R2`; \} ? \[`A1`, `R1`\] \| \[`A2`, `R2`\] : `T` *extends* (...`a`) => infer R ? \[`A`, `R`\] : `never`
+> **Signatures**\<`T`\> = `T` _extends_ \{(...`a`): `R1`; (...`a`): `R2`; (...`a`): `R3`; (...`a`): `R4`; \} ? \[`A1`, `R1`\] \| \[`A2`, `R2`\] \| \[`A3`, `R3`\] \| \[`A4`, `R4`\] : `T` _extends_ \{(...`a`): `R1`; (...`a`): `R2`; (...`a`): `R3`; \} ? \[`A1`, `R1`\] \| \[`A2`, `R2`\] \| \[`A3`, `R3`\] : `T` _extends_ \{(...`a`): `R1`; (...`a`): `R2`; \} ? \[`A1`, `R1`\] \| \[`A2`, `R2`\] : `T` _extends_ (...`a`) => infer R ? \[`A`, `R`\] : `never`
 
 Every call signature a function type has, as its parameters paired with what
 it returns.
 
-`Parameters<F>` and `ReturnType<F>` see only the *last* overload, so
+`Parameters<F>` and `ReturnType<F>` see only the _last_ overload, so
 `Invoke<typeof s.replace, [searchValue: ",", replaceValue: ";"]>` would be rejected for not being the
 replacer-function form. Matching the overload list instead means any
 spelling the function actually accepts is accepted here — up to four
@@ -623,7 +692,7 @@ overloads, which covers the standard library.
 
 `T`
 
-***
+---
 
 ## StringCondition
 
@@ -631,7 +700,7 @@ overloads, which covers the standard library.
 
 Conditions valid on strings.
 
-***
+---
 
 ## Test
 
@@ -639,7 +708,7 @@ Conditions valid on strings.
 
 Anything that can be the right-hand side of an exported test alias.
 
-***
+---
 
 ## UniversalCondition
 
@@ -647,7 +716,7 @@ Anything that can be the right-hand side of an exported test alias.
 
 Conditions that apply to any value.
 
-***
+---
 
 ## NT
 

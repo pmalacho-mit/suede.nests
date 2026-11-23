@@ -7,17 +7,31 @@ export type Expr =
   | { kind: "literal"; source: string }
   | { kind: "array"; elements: Expr[] }
   | { kind: "object"; entries: [key: string, value: Expr][] }
-  | { kind: "name"; name: string }
+  // `imported`: a value the test imports as a type (a harness function), re-imported to run
+  | { kind: "name"; name: string; imported?: { from: string; name: string } }
   // awaited only when what it returns is thenable
-  | { kind: "call"; callee: Expr; args: Expr[]; awaited: boolean }
+  // `labels`: what each argument is, as the tuple names it or else the parameter
+  | {
+      kind: "call";
+      callee: Expr;
+      args: Expr[];
+      awaited: boolean;
+      labels?: (string | null)[];
+    }
   // a constructor cannot be async, so it is never awaited
-  | { kind: "construct"; callee: Expr; args: Expr[] }
+  | {
+      kind: "construct";
+      callee: Expr;
+      args: Expr[];
+      labels?: (string | null)[];
+    }
   | {
       kind: "method";
       receiver: Expr;
       method: string;
       args: Expr[];
       awaited: boolean;
+      labels?: (string | null)[];
     }
   | { kind: "index"; object: Expr; key: string | number }
   | { kind: "file"; path: Expr; format: Internal.FileFormat }
@@ -28,8 +42,31 @@ export type Expr =
   // kept so the printed code reads as the type did
   | { kind: "paren"; inner: Expr }
   | { kind: "mocked"; inner: Expr }
+  // the error `inner` throws or rejects with; `source` is how the test wrote it
+  | { kind: "caught"; inner: Expr; source: string; awaited: boolean }
+  // `vi.fn()`, or `vi.fn(impl)`
+  | { kind: "spy"; impl: Expr | null }
+  // what a spy was called with, a tuple per call
+  | { kind: "calls"; spy: Expr }
+  // a fresh directory holding these files, removed when the test ends
+  | { kind: "tempDir"; files: Expr }
+  | { kind: "exists"; path: Expr }
+  | { kind: "listDir"; path: Expr }
+  | { kind: "repeat"; text: Expr; count: Expr }
+  // a template literal whose holes are values: `${head}${spans[0][0]}${spans[0][1]}…`
+  | { kind: "template"; head: string; spans: [value: Expr, text: string][] }
+  // effects with a meaning of their own, which run where they are written
+  | { kind: "advanceTimers"; ms: Expr; awaited: true }
+  | { kind: "writeFile"; path: Expr; text: Expr }
   // prints a call that fails at run time
   | { kind: "unsupported"; source: string };
+
+// effects that apply before the test's code runs, and are undone when it ends
+export type Setup = (
+  | { kind: "fakeTimers"; now: Expr | null }
+  // a null value unsets the variable
+  | { kind: "stubEnv"; name: string; value: Expr | null }
+) & { line: number };
 
 export type ConditionName =
   | Internal.UniversalCondition
@@ -84,7 +121,13 @@ export type TestOptions = { timeout?: number; retry?: number };
 // imported from another module: `vi.mock` runs before the test module's own code
 export type Replacement = { from: string; name: string; factory: boolean };
 
-export type ModuleMock = { path: string; replacement: Replacement | null; line: number };
+export type ModuleMock = {
+  path: string;
+  replacement: Replacement | null;
+  line: number;
+};
+
+export type Tag = { name: string; text: string };
 
 export type TestCase = {
   name: string;
@@ -94,6 +137,10 @@ export type TestCase = {
   line: number;
   // anchored to the alias, even for a table row
   doc: { text: string; line: number } | null;
+  // a `/** … */` written just before one row of a table: what that row shows
+  rowDoc: { text: string; line: number } | null;
+  // `@control`, `@principle P4`, …: the alias's JSDoc tags, then the row's own
+  tags: Tag[];
   mode: "test" | "test.skip" | "test.only" | "test.todo";
   // files the test needs, relative to it: when one is missing, the test is skipped
   requires: string[];
@@ -103,6 +150,7 @@ export type TestCase = {
   // value re-imports of type-only bindings: specifier → `a as a$`…
   imports: Map<string, Set<string>>;
   mocks: ModuleMock[];
+  setup: Setup[];
 };
 
 export const children = (e: Expr): Expr[] => {
@@ -126,7 +174,25 @@ export const children = (e: Expr): Expr[] => {
       return e.name ? [e.name] : [];
     case "paren":
     case "mocked":
+    case "caught":
       return [e.inner];
+    case "spy":
+      return e.impl ? [e.impl] : [];
+    case "calls":
+      return [e.spy];
+    case "tempDir":
+      return [e.files];
+    case "exists":
+    case "listDir":
+      return [e.path];
+    case "repeat":
+      return [e.text, e.count];
+    case "template":
+      return e.spans.map(([value]) => value);
+    case "advanceTimers":
+      return [e.ms];
+    case "writeFile":
+      return [e.path, e.text];
     default:
       return [];
   }
@@ -135,8 +201,42 @@ export const children = (e: Expr): Expr[] => {
 export const some = (e: Expr, test: (e: Expr) => boolean): boolean =>
   test(e) || children(e).some((c) => some(c, test));
 
+// every node that prints `await` says so where it is lowered
 export const awaits = (e: Expr): boolean =>
-  some(e, (n) => (n.kind === "call" || n.kind === "method") && n.awaited);
+  some(e, (n) => "awaited" in n && n.awaited);
+
+/** What each DSL value is called where a test writes it, and what its printed form needs. */
+export const DSL_KINDS: Partial<
+  Record<Expr["kind"], { dsl: string; needs?: "vi" | "runtime" | "fs" }>
+> = {
+  file: { dsl: "FromFile", needs: "fs" },
+  env: { dsl: "Env" },
+  snapshot: { dsl: "Snapshot" },
+  mocked: { dsl: "Mocked", needs: "vi" },
+  caught: { dsl: "Caught", needs: "runtime" },
+  spy: { dsl: "Spy", needs: "vi" },
+  calls: { dsl: "Calls" },
+  tempDir: { dsl: "TempDir", needs: "runtime" },
+  exists: { dsl: "Exists", needs: "runtime" },
+  listDir: { dsl: "ListDir", needs: "runtime" },
+  repeat: { dsl: "Repeat" },
+  template: { dsl: "template literal" },
+  advanceTimers: { dsl: "AdvanceTimers", needs: "vi" },
+  writeFile: { dsl: "WriteFile", needs: "runtime" },
+};
+
+const setupExprs = (s: Setup): Expr[] =>
+  s.kind === "stubEnv" ? (s.value ? [s.value] : []) : s.now ? [s.now] : [];
+
+/** Every expression a test evaluates: its bindings (and their defaults), its statements, its setup. */
+export const exprsOfTest = (t: TestCase): Expr[] => [
+  ...t.bindings.flatMap((b) => [
+    ...(b.params ?? []).flatMap((p) => (p.fallback ? [p.fallback] : [])),
+    b.value,
+  ]),
+  ...t.body.flatMap(exprsOf),
+  ...t.setup.flatMap(setupExprs),
+];
 
 export const exprsOf = (s: Statement): Expr[] =>
   s.kind === "effect"

@@ -1,0 +1,26 @@
+import { test, expect } from "vitest";
+import * as nt from "../release/vite-plugin/runtime.mts";
+import { readFileSync } from "node:fs";
+
+import fs from "node:fs";
+import path from "node:path";
+
+/** Copies a file, making the directories it goes into. */
+const copy = (from: string, to: string) => {
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  fs.copyFileSync(from, to);
+};
+
+/** the copy has the original's text, and the original stays */
+test("copy > Copies", () => {
+  const Dir = nt.tempDir({ "in/a.txt": "hello" });
+  copy(`${Dir}/in/a.txt`, `${Dir}/out/a.txt`);
+  const actual1 = readFileSync(new URL(`${Dir}/out/a.txt`, import.meta.url), "utf8");
+  const expected1 = "hello";
+  expect.soft(actual1).toEqual(expected1);
+  const actual2 = nt.listDir(Dir);
+  const expected2 = ["in", "out"];
+  expect.soft(actual2).toEqual(expected2);
+  const actual3 = nt.exists(`${Dir}/in/a.txt`);
+  expect.soft(actual3).toBeTruthy();
+});

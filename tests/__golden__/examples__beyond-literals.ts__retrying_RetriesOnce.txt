@@ -1,0 +1,22 @@
+import { test, expect, vi } from "vitest";
+
+const retrying = async (load: () => Promise<number>) => {
+  try {
+    return await load();
+  } catch {
+    return await load();
+  }
+};
+
+/** a load that fails once is tried again, and its second answer is the answer */
+test("retrying > RetriesOnce", async () => {
+  const Load = vi.fn();
+  Load.mockRejectedValueOnce(new Error("flaky"));
+  Load.mockResolvedValue(7);
+  const actual1 = await retrying(Load);
+  const expected1 = 7;
+  expect.soft(actual1).toEqual(expected1);
+  const actual2 = Load.mock.calls.length;
+  const expected2 = 2;
+  expect.soft(actual2).toEqual(expected2);
+});

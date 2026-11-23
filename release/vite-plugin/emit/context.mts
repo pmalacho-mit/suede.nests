@@ -1,7 +1,7 @@
 import ts from "@typescript/typescript6";
 import { isDslModule } from "../../workspace.mts";
 
-import type { Binding, Expr, ModuleMock } from "./ir.mts";
+import type { Binding, Expr, ModuleMock, Setup } from "./ir.mts";
 
 export type Warning = {
   line: number;
@@ -20,6 +20,7 @@ export type TestState = {
   // specifier → value imports to inject: `a as a$`, `default as d$`, `* as ns$`
   imports: Map<string, Set<string>>;
   mocks: ModuleMock[];
+  setup: Setup[];
 };
 
 const freshTestState = (): TestState => ({
@@ -27,6 +28,7 @@ const freshTestState = (): TestState => ({
   order: [],
   imports: new Map(),
   mocks: [],
+  setup: [],
 });
 
 export type EmitContext = ReturnType<typeof createEmitContext>;
@@ -48,7 +50,10 @@ const valueBinding = (declaration: ts.Declaration, local: string) => {
   return null;
 };
 
-export const createEmitContext = (program: ts.Program, source: ts.SourceFile) => {
+export const createEmitContext = (
+  program: ts.Program,
+  source: ts.SourceFile,
+) => {
   const checker = program.getTypeChecker();
   const warnings: Warning[] = [];
   // a node is asked about several times over, so each answer is kept
@@ -86,8 +91,15 @@ export const createEmitContext = (program: ts.Program, source: ts.SourceFile) =>
         : null;
     },
     warn(node: ts.Node, message: string) {
-      const { line, character } = source.getLineAndCharacterOfPosition(node.getStart());
-      warnings.push({ line, column: character, length: node.getWidth(), message });
+      const { line, character } = source.getLineAndCharacterOfPosition(
+        node.getStart(),
+      );
+      warnings.push({
+        line,
+        column: character,
+        length: node.getWidth(),
+        message,
+      });
     },
     unsupported(node: ts.Node, why = "is a type, not a value"): Expr {
       cx.warn(node, `\`${node.getText()}\` ${why}`);
@@ -97,15 +109,22 @@ export const createEmitContext = (program: ts.Program, source: ts.SourceFile) =>
     valueName(identifier: ts.Identifier): string | Expr {
       const symbol = checker.getSymbolAtLocation(identifier);
       const declaration =
-        symbol && symbol.flags & ts.SymbolFlags.Alias ? symbol.declarations?.[0] : undefined;
+        symbol && symbol.flags & ts.SymbolFlags.Alias
+          ? symbol.declarations?.[0]
+          : undefined;
       const specifier = declaration && typeOnlySpecifierOf(declaration);
       if (!declaration || !specifier) return identifier.text;
       const local = `${identifier.text}$`;
       const binding = valueBinding(declaration, local);
-      if (!binding) return cx.unsupported(identifier, "cannot be re-imported as a value");
+      if (!binding)
+        return cx.unsupported(identifier, "cannot be re-imported as a value");
       const bindings = cx.test.imports.get(specifier) ?? new Set<string>();
       cx.test.imports.set(specifier, bindings.add(binding));
-      return local;
+      return {
+        kind: "name",
+        name: local,
+        imported: { from: specifier, name: identifier.text },
+      };
     },
   };
   return cx;

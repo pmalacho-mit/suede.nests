@@ -1,0 +1,21 @@
+import { test, expect, vi, onTestFinished } from "vitest";
+
+const debounce = (run: () => void, ms: number) => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return () => {
+    clearTimeout(timer);
+    timer = setTimeout(run, ms);
+  };
+};
+
+/** and not before it */
+test("debounce > NotBefore", async () => {
+  vi.useFakeTimers();
+  onTestFinished(() => { vi.useRealTimers(); });
+  const Run = vi.fn();
+  const Debounced = debounce(Run, 100);
+  Debounced();
+  await vi.advanceTimersByTimeAsync(99);
+  const actual = Run.mock.calls;
+  expect(actual).toHaveLength(0);
+});

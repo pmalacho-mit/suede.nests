@@ -1,7 +1,6 @@
 import ts from "@typescript/typescript6";
 import path from "node:path";
 import fs from "node:fs";
-import { fileURLToPath } from "node:url";
 import picomatch from "picomatch";
 import { encode } from "@jridgewell/sourcemap-codec";
 import { DERIVED, ensureDerived } from "./cache.mts";
@@ -10,6 +9,12 @@ import { SUFFIX as EXTRACTED } from "../extract.mts";
 import { FORK, fork, forkOf } from "./fork.mts";
 import { configFor, emittedFor, minimalFor } from "./minimal.mts";
 import { relativeTo } from "./paths.mts";
+import {
+  isTypeScript,
+  LIBRARY,
+  testModuleFinder,
+  testNamespaceMarker,
+} from "./discovery.mts";
 import type { Plugin, ViteUserConfig } from "vitest/config";
 import type { SourceMapSegment } from "@jridgewell/sourcemap-codec";
 import type { Line } from "./emit/context.mts";
@@ -81,12 +86,6 @@ const matchesCounter = (filter: RegExp | null) =>
 const readsAsPattern = (filter: RegExp | null) =>
   !!filter?.test("add > Rows0") && !filter.test("add > Rows[0]");
 
-const isTypeScript = (file: string) => /\.[cm]?tsx?$/.test(file);
-
-// line-anchored, so a mention in a comment is not one; the printer decides what is a test
-const testNamespaceMarker = (root?: string) =>
-  new RegExp(`^\\s*declare\\s+namespace\\s+${root ?? "\\w"}`, "m");
-
 type Versioned = { version: number; snapshot: ts.IScriptSnapshot };
 
 const textOf = (snapshot: ts.IScriptSnapshot) =>
@@ -152,45 +151,6 @@ function languageService(cwd: string, tsconfig: string) {
   };
 }
 
-type Discovery = {
-  cwd: string;
-  exclude: string[];
-  marker: RegExp;
-  skip: string | null;
-};
-
-// `src/fixtures/**` should stop the walk at `src/fixtures`, not only reject what is under it
-const asDirectories = (globs: string[]) =>
-  globs.map((glob) => glob.replace(/\/\*\*(\/\*)?$/, ""));
-
-const isHidden = (entry: fs.Dirent) =>
-  entry.name === "node_modules" || entry.name.startsWith(".");
-
-function testModuleFinder({ cwd, exclude, marker, skip }: Discovery) {
-  const excluded = picomatch(exclude, { dot: true });
-  const excludedDir = picomatch(asDirectories(exclude), { dot: true });
-
-  const holdsTests = (file: string) =>
-    isTypeScript(file) &&
-    !file.endsWith(".d.ts") &&
-    !excluded(relativeTo(cwd, file)) &&
-    marker.test(fs.readFileSync(file, "utf8"));
-
-  function* under(dir: string): Generator<string> {
-    if (path.resolve(dir) === skip) return;
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (isHidden(entry)) continue;
-      const at = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (!excludedDir(relativeTo(cwd, at))) yield* under(at);
-      } else if (holdsTests(at)) yield at;
-    }
-  }
-  return under;
-}
-
-const library = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-
 const VITEST_DEFAULT_INCLUDE = ["**/*.{test,spec}.?(c|m)[jt]s?(x)"];
 
 // Vite appends a plugin's `include` to the user's, so it replaces only Vitest's default
@@ -249,7 +209,7 @@ export default function namespaceTests({
     cwd,
     exclude,
     marker,
-    skip: scanSelf ? null : library,
+    skip: scanSelf ? null : LIBRARY,
   });
   const shared = picomatch(noIsolateModuleImport);
   const isShared = (file: string) => shared(relativeTo(cwd, file));

@@ -54,6 +54,8 @@ describe("expressions", () => {
         { kind: "name", name: "Inner" },
         { kind: "literal", source: "4" },
       ],
+      // unnamed in the tuple, so named for the parameters they land in
+      labels: ["a", "b"],
     });
   });
 
@@ -93,7 +95,9 @@ describe("expressions", () => {
         export type Roundtrip = Expect<Loaded<"a">["id"], "=", "a">;
       }
     `);
-    const [emitted] = lowerAlias(cx, alias("Roundtrip"), ["load"]).map(printTest);
+    const [emitted] = lowerAlias(cx, alias("Roundtrip"), ["load"]).map(
+      printTest,
+    );
     // the arrow awaits, so calling it gives back a promise — and the member is
     // read from what that promise resolved to, not from the promise
     expect(emitted?.code).toBe(

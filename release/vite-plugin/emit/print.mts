@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 
 import { DISPLAY } from "../codec.mts";
 import { importPath } from "../paths.mts";
-import { awaits, children, exprsOf } from "./ir.mts";
+import { awaits, children, DSL_KINDS, exprsOf, exprsOfTest } from "./ir.mts";
 
 import type { Assertion as VitestAssertion } from "vitest";
 import type { Line } from "./context.mts";
@@ -14,6 +14,7 @@ import type {
   ModuleMock,
   Param,
   Replacement,
+  Setup,
   Statement,
   TestCase,
 } from "./ir.mts";
@@ -33,8 +34,7 @@ const propKey = (name: string) => (isIdentifier(name) ? name : quote(name));
 
 // with `await` or `new` in front, a member access needs parentheses
 const needsParens = (e: Expr) =>
-  e.kind === "construct" ||
-  ((e.kind === "call" || e.kind === "method") && e.awaited);
+  e.kind === "construct" || ("awaited" in e && e.awaited);
 
 const receiver = (e: Expr) =>
   needsParens(e) ? `(${printExpr(e)})` : printExpr(e);
@@ -84,10 +84,35 @@ export function printExpr(e: Expr): string {
       return `(${printExpr(e.inner)})`;
     case "mocked":
       return `vi.mocked(${printExpr(e.inner)})`;
+    case "caught":
+      // a rejection is caught by awaiting it, so an awaited expression is caught in an async thunk
+      return `${e.awaited ? "await " : ""}nt.caught(${e.awaited ? "async " : ""}() => (${printExpr(e.inner)}), ${quote(e.source)})`;
+    case "spy":
+      return `vi.fn(${e.impl ? printExpr(e.impl) : ""})`;
+    case "calls":
+      return `${receiver(e.spy)}.mock.calls`;
+    case "tempDir":
+      return `nt.tempDir(${printExpr(e.files)})`;
+    case "exists":
+      return `nt.exists(${printExpr(e.path)})`;
+    case "listDir":
+      return `nt.listDir(${printExpr(e.path)})`;
+    case "repeat":
+      return `${receiver(e.text)}.repeat(${printExpr(e.count)})`;
+    case "template":
+      return `\`${templateText(e.head)}${e.spans.map(([value, text]) => `\${${printExpr(value)}}${templateText(text)}`).join("")}\``;
+    case "advanceTimers":
+      return `await vi.advanceTimersByTimeAsync(${printExpr(e.ms)})`;
+    case "writeFile":
+      return `nt.writeFile(${printExpr(e.path)}, ${printExpr(e.text)})`;
     case "unsupported":
       return `nt_unsupported(${quote(e.source)})`;
   }
 }
+
+// the text between a template's holes, as it is written inside backticks
+const templateText = (text: string) =>
+  text.replace(/[\\`]|\$\{/g, (m) => `\\${m}`);
 
 // a path relative to the test file, wherever the test runs from
 const fileUrl = (path: string) => `new URL(${path}, import.meta.url)`;
@@ -450,6 +475,14 @@ declare namespace regex {
   >;
 }
 
+/** The fields a `Throws` matcher reads off the error itself; any other is one of the error's own. */
+export const MATCHER_FIELDS = [
+  "instanceOf",
+  "name",
+  "message",
+  "matches",
+] as const;
+
 // an awaited subject throws by rejecting, and only `.rejects` hands an error to a predicate
 const rejectsFor = (a: Assertion) =>
   awaits(a.actual) || throwsChain(a.expected).matcher !== "toThrow";
@@ -459,21 +492,28 @@ const throwsChain = (expected: Expr | null): Chain => {
     return chain("toThrow", []);
   if (expected.kind !== "object")
     return chain("toThrow", [printExpr(expected)]);
-  const checks = expected.entries.map(([key, value]) => {
-    const v = printExpr(value);
-    switch (key) {
-      case "instanceOf":
-        return `err instanceof ${v}`;
-      case "name":
-        return `err.name === ${v}`;
-      case "message":
-        return `String(err.message).includes(${v})`;
-      case "matches":
-        return `${regex(value)}.test(String(err.message))`;
-      default:
-        return "false";
-    }
-  });
+  const known: readonly string[] = MATCHER_FIELDS;
+  const checks = expected.entries
+    .filter(([key]) => known.includes(key))
+    .map(([key, value]) => {
+      const v = printExpr(value);
+      switch (key) {
+        case "instanceOf":
+          return `err instanceof ${v}`;
+        case "name":
+          return `err.name === ${v}`;
+        case "message":
+          return `String(err.message).includes(${v})`;
+        default:
+          return `${regex(value)}.test(String(err.message))`;
+      }
+    });
+  // the error's own fields, compared as `"matches"` compares, with its diff when they differ
+  const fields = expected.entries.filter(([key]) => !known.includes(key));
+  if (fields.length)
+    checks.push(
+      `(expect(err).toMatchObject(${printExpr({ kind: "object", entries: fields })}), true)`,
+    );
   return chain("toSatisfy", [`(err) => ${checks.join(" && ")}`]);
 };
 
@@ -501,10 +541,35 @@ export const namesIn = (t: TestCase): string[] => {
   for (const b of t.bindings) {
     found.push(b.name);
     b.params?.forEach((p) => found.push(p.name));
-    walk(b.value);
   }
-  for (const s of t.body) exprsOf(s).forEach(walk);
+  exprsOfTest(t).forEach(walk);
   return found;
+};
+
+// first in the test, so nothing the test does runs without them, and each undone when it ends
+export const printSetup = (setup: Setup[]): Line[] => {
+  const lines: Line[] = [];
+  for (const { line, ...s } of setup)
+    if (s.kind === "fakeTimers")
+      lines.push(
+        {
+          code: `vi.useFakeTimers(${s.now ? `{ now: new Date(${printExpr(s.now)}) }` : ""});`,
+          line,
+        },
+        { code: "onTestFinished(() => { vi.useRealTimers(); });", line },
+      );
+    else
+      lines.push({
+        code: `vi.stubEnv(${quote(s.name)}, ${s.value ? printExpr(s.value) : "undefined"});`,
+        line,
+      });
+  const stubbed = setup.filter((s) => s.kind === "stubEnv").at(-1);
+  if (stubbed)
+    lines.push({
+      code: "onTestFinished(() => { vi.unstubAllEnvs(); });",
+      line: stubbed.line,
+    });
+  return lines;
 };
 
 // `const actual = Counter$;` says nothing `Counter$` did not
@@ -556,7 +621,9 @@ const displayStatements = (a: Assertion, { subject, expected }: Bound) => {
     `type: ${quote(DISPLAY)}`,
     `page: ${quote(a.display.page)}`,
     encoded("actual", subject),
-    ...(expected !== null && a.expected?.kind !== "snapshot" ? [encoded("expected", expected)] : []),
+    ...(expected !== null && a.expected?.kind !== "snapshot"
+      ? [encoded("expected", expected)]
+      : []),
     ...(a.display.meta ? [encoded("meta", printExpr(a.display.meta))] : []),
   ];
   return [`await recordArtifact(task, { ${values.join(", ")} });`];
@@ -630,8 +697,12 @@ export type Needs = {
   task: boolean;
   /** `nt_unsupported`, for what could not be materialised. */
   unsupported: boolean;
-  /** `vi`, for a `Mock` or a `Mocked`. */
+  /** `vi`, for a `Mock`, a `Mocked`, a `Spy`, fake timers or a stubbed variable. */
   vi: boolean;
+  /** `onTestFinished`, to undo a setup when the test ends. */
+  finished: boolean;
+  /** `nt`, the runtime, for `Caught` and the files a test makes and reads. */
+  runtime: boolean;
   /** Value re-imports of type-only bindings: specifier → `a as a$`… */
   imports: Map<string, Set<string>>;
 };
@@ -650,21 +721,19 @@ export function needsOf(t: TestCase): Needs {
     env: false,
     task: t.body.some(showsOnPage),
     unsupported: false,
-    vi: t.mocks.length > 0,
+    vi: t.mocks.length > 0 || t.setup.length > 0,
+    finished: t.setup.length > 0,
+    runtime: false,
     imports: t.imports,
   };
   const visit = (e: Expr): void => {
-    if (e.kind === "file") needs.fs = true;
-    else if (e.kind === "env" && !e.fallback) needs.env = true;
+    const needed = DSL_KINDS[e.kind]?.needs;
+    if (needed) needs[needed] = true;
+    if (e.kind === "env" && !e.fallback) needs.env = true;
     else if (e.kind === "unsupported") needs.unsupported = true;
-    else if (e.kind === "mocked") needs.vi = true;
     children(e).forEach(visit);
   };
-  t.bindings.forEach((b) => {
-    b.params?.forEach((p) => p.fallback && visit(p.fallback));
-    visit(b.value);
-  });
-  t.body.flatMap(exprsOf).forEach(visit);
+  exprsOfTest(t).forEach(visit);
   return needs;
 }
 
@@ -680,6 +749,8 @@ export function allNeeds(needs: Needs[]): Needs {
     task: needs.some((n) => n.task),
     unsupported: needs.some((n) => n.unsupported),
     vi: needs.some((n) => n.vi),
+    finished: needs.some((n) => n.finished),
+    runtime: needs.some((n) => n.runtime),
     imports,
   };
 }
@@ -764,8 +835,10 @@ const testFunction = (t: TestCase) => {
 export function printTest(t: TestCase): EmittedTest {
   const needs = needsOf(t);
   const scope = names(namesIn(t));
-  const doc: Line[] = t.doc
-    ? [{ code: `/** ${t.doc.text.replace(/\n/g, " ")} */`, line: t.doc.line }]
+  // a row says what it shows; one that says nothing is described by its table
+  const shown = t.rowDoc ?? t.doc;
+  const doc: Line[] = shown
+    ? [{ code: `/** ${shown.text.replace(/\n/g, " ")} */`, line: shown.line }]
     : [];
   const mocks: Line[] = t.mocks.map((mock) => ({
     code: printMock(mock),
@@ -781,6 +854,10 @@ export function printTest(t: TestCase): EmittedTest {
             code: `${testFunction(t)}(${quote(t.name)}${Object.keys(t.options).length ? `, ${JSON.stringify(t.options)}` : ""}, ${isAsync(t) ? "async " : ""}(${needs.task ? "{ task }" : ""}) => {`,
             line: t.line,
           },
+          ...printSetup(t.setup).map(({ code, line }) => ({
+            code: `  ${code}`,
+            line,
+          })),
           ...t.bindings.map((b) => ({
             code: `  ${printBinding(b)}`,
             line: b.line,
@@ -797,9 +874,18 @@ export function printTest(t: TestCase): EmittedTest {
 }
 
 const CODEC = fileURLToPath(new URL("../codec.mts", import.meta.url));
+const RUNTIME = fileURLToPath(new URL("../runtime.mts", import.meta.url));
 
 const vitestImports = (needs: Needs) =>
-  ["test", "expect", needs.vi && "vi", needs.task && "recordArtifact"].filter(Boolean).join(", ");
+  [
+    "test",
+    "expect",
+    needs.vi && "vi",
+    needs.finished && "onTestFinished",
+    needs.task && "recordArtifact",
+  ]
+    .filter(Boolean)
+    .join(", ");
 
 // `file` is the module the tests are printed from; they are served, and extracted, beside it
 export function headerLines(needs: Needs, file: string): string[] {
@@ -809,6 +895,7 @@ export function headerLines(needs: Needs, file: string): string[] {
     `// ───────── generated by namespace-tests; not part of your build ─────────`,
     `import { ${vitestImports(needs)} } from "vitest";`,
     needs.task && `import { encode } from ${quote(importPath(file, CODEC))};`,
+    needs.runtime && `import * as nt from ${quote(importPath(file, RUNTIME))};`,
     (needs.exists || needs.fs) &&
       `import { ${[needs.exists && "existsSync", needs.fs && "readFileSync"].filter(Boolean).join(", ")} } from "node:fs";`,
     ...[...needs.imports].flatMap(([spec, names]) => {
@@ -852,5 +939,9 @@ declare namespace testFunction {
   >;
 
   /** a test already skipped checks for nothing */
-  export type SkippedChecksNothing = Expect<Invoke<typeof printAlias, [Suite, "Skipped"]>, "startsWith", 'test.skip("one > Skipped"'>;
+  export type SkippedChecksNothing = Expect<
+    Invoke<typeof printAlias, [Suite, "Skipped"]>,
+    "startsWith",
+    'test.skip("one > Skipped"'
+  >;
 }

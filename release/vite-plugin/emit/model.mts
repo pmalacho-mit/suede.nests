@@ -4,6 +4,8 @@ import { isFirstPartySpecifier } from "../fork.mts";
 import { awaits } from "./ir.mts";
 import { isCondition } from "./print.mts";
 
+import { docTextOf, tagsIn, tagsOf } from "./declarations.mts";
+
 import type { EmitContext } from "./context.mts";
 import type {
   Assertion,
@@ -12,6 +14,7 @@ import type {
   Replacement,
   Shape,
   Statement,
+  Tag,
   TestCase,
   TestOptions,
 } from "./ir.mts";
@@ -27,7 +30,10 @@ const elements = (tuple: ts.TupleTypeNode) => tuple.elements.map(unwrap);
 
 export function lowerExpr(cx: EmitContext, node: ts.TypeNode): Expr {
   if (ts.isImportTypeNode(node))
-    return cx.unsupported(node, "is a module's type, and a module is not a value a test can use");
+    return cx.unsupported(
+      node,
+      "is a module's type, and a module is not a value a test can use",
+    );
   if (ts.isParenthesizedTypeNode(node))
     return { kind: "paren", inner: lowerExpr(cx, node.type) };
   if (ts.isLiteralTypeNode(node)) {
@@ -46,7 +52,15 @@ export function lowerExpr(cx: EmitContext, node: ts.TypeNode): Expr {
   if (ts.isTemplateLiteralTypeNode(node))
     return node.templateSpans.length === 0
       ? { kind: "string", value: node.head.text }
-      : fold(cx, node); // the checker may reduce it to one string
+      : // the checker may reduce it to one string; otherwise its holes are values
+        (literalOfType(cx, cx.checker.getTypeFromTypeNode(node)) ?? {
+          kind: "template",
+          head: node.head.text,
+          spans: node.templateSpans.map((s) => [
+            lowerExpr(cx, s.type),
+            s.literal.text,
+          ]),
+        });
   if (ts.isTupleTypeNode(node))
     return {
       kind: "array",
@@ -200,10 +214,18 @@ declare namespace lowerExpr {
   export type OmittedArguments = Table<
     typeof harness.printExpression,
     [
-      [args: [`${NoParameters}type Subject = Invoke<typeof none>;`], expected: "none()"],
-      [args: [`${NoParameters}type Subject = Construct<typeof Cart>;`], expected: "new Cart()"],
       [
-        args: [`${NoParameters}type Subject = Call<Construct<typeof Cart>, "total">;`],
+        args: [`${NoParameters}type Subject = Invoke<typeof none>;`],
+        expected: "none()",
+      ],
+      [
+        args: [`${NoParameters}type Subject = Construct<typeof Cart>;`],
+        expected: "new Cart()",
+      ],
+      [
+        args: [
+          `${NoParameters}type Subject = Call<Construct<typeof Cart>, "total">;`,
+        ],
         expected: "(new Cart()).total()",
       ],
     ]
@@ -240,7 +262,7 @@ export function lowerName(cx: EmitContext, node: ts.EntityName): Expr {
   }
   const left = lowerName(cx, node.left);
   return left.kind === "name"
-    ? { kind: "name", name: `${left.name}.${node.right.text}` }
+    ? { ...left, name: `${left.name}.${node.right.text}` }
     : left;
 }
 
@@ -278,6 +300,18 @@ const args = (cx: EmitContext, node: ts.TypeNode | undefined): Expr[] => {
     : [cx.unsupported(node)];
 };
 
+// what each argument is: the tuple's own name for it, or the parameter it lands in
+const labelsOf = (
+  node: ts.TypeNode | undefined,
+  signatures: readonly ts.Signature[] | undefined,
+): (string | null)[] => {
+  if (!node || !ts.isTupleTypeNode(node)) return [];
+  const params = signatures?.[0]?.getParameters() ?? [];
+  return node.elements.map((e, i) =>
+    ts.isNamedTupleMember(e) ? e.name.text : (params[i]?.getName() ?? null),
+  );
+};
+
 // or whatever the checker folds it to
 export const literalText = (cx: EmitContext, node: ts.TypeNode): string =>
   ts.isLiteralTypeNode(node) && ts.isStringLiteral(node.literal)
@@ -300,14 +334,22 @@ function lowerIntrinsic(
             callee: callee(cx, a0),
             args: args(cx, a1),
             awaited: returnsThenable(cx, typeOfCallee(cx, a0)),
+            labels: labelsOf(a1, typeOfCallee(cx, a0).getCallSignatures()),
           }
         : arity(cx, node, 1);
     case "Construct":
       return a0
-        ? { kind: "construct", callee: callee(cx, a0), args: args(cx, a1) }
+        ? {
+            kind: "construct",
+            callee: callee(cx, a0),
+            args: args(cx, a1),
+            labels: labelsOf(a1, typeOfCallee(cx, a0).getConstructSignatures()),
+          }
         : arity(cx, node, 1);
     case "Mocked":
-      return a0 ? { kind: "mocked", inner: lowerExpr(cx, a0) } : arity(cx, node, 1);
+      return a0
+        ? { kind: "mocked", inner: lowerExpr(cx, a0) }
+        : arity(cx, node, 1);
     case "Call": {
       if (!a0 || !a1) return arity(cx, node, 2);
       const method = literalText(cx, a1);
@@ -317,6 +359,7 @@ function lowerIntrinsic(
         method,
         args: args(cx, a2),
         awaited: returnsThenable(cx, typeOfMethod(cx, a0, method)),
+        labels: labelsOf(a2, typeOfMethod(cx, a0, method)?.getCallSignatures()),
       };
     }
     case "Fixture":
@@ -347,9 +390,177 @@ function lowerIntrinsic(
       return { kind: "snapshot", name: a0 ? lowerExpr(cx, a0) : null };
     case "Nothing":
       return { kind: "literal", source: "undefined" };
+    case "Caught":
+      return a0
+        ? caughtOf(lowerExpr(cx, a0), a0.getText().replace(/\s+/g, " "))
+        : arity(cx, node, 1);
+    case "Spy":
+      return { kind: "spy", impl: given(a1) ? lowerExpr(cx, a1) : null };
+    case "Calls":
+      return a0
+        ? { kind: "calls", spy: lowerExpr(cx, a0) }
+        : arity(cx, node, 1);
+    case "TempDir":
+      return {
+        kind: "tempDir",
+        files: a0 ? lowerExpr(cx, a0) : { kind: "object", entries: [] },
+      };
+    case "Exists":
+      return a0
+        ? { kind: "exists", path: lowerExpr(cx, a0) }
+        : arity(cx, node, 1);
+    case "ListDir":
+      return a0
+        ? { kind: "listDir", path: lowerExpr(cx, a0) }
+        : arity(cx, node, 1);
+    case "Repeat":
+      return a0 && a1
+        ? { kind: "repeat", text: lowerExpr(cx, a0), count: lowerExpr(cx, a1) }
+        : arity(cx, node, 2);
+    case "AdvanceTimers":
+      return a0
+        ? { kind: "advanceTimers", ms: lowerExpr(cx, a0), awaited: true }
+        : arity(cx, node, 1);
+    case "WriteFile":
+      return a0 && a1
+        ? {
+            kind: "writeFile",
+            path: lowerExpr(cx, a0),
+            text: lowerExpr(cx, a1),
+          }
+        : arity(cx, node, 2);
+    case "FakeTimers":
+    case "StubEnv":
+      return cx.unsupported(
+        node,
+        `applies to a whole test: write it among a Given's effects`,
+      );
     default:
       return cx.unsupported(node, `${dsl} is not a value`);
   }
+}
+
+// a rejection is caught by awaiting it
+const caughtOf = (inner: Expr, source: string): Expr => ({
+  kind: "caught",
+  inner,
+  source,
+  awaited: awaits(inner),
+});
+
+// an optional type argument, left out or written as `undefined`
+const given = (node: ts.TypeNode | undefined): node is ts.TypeNode =>
+  !!node && node.kind !== ts.SyntaxKind.UndefinedKeyword;
+
+declare namespace lowerIntrinsic {
+  type Fns = `
+    const f = (x: number) => x;
+    const load = async (x: number) => x;
+  `;
+
+  /** a caught error is the thrown value; a rejection is awaited to be caught */
+  export type Caught_ = Table<
+    typeof harness.printExpression,
+    [
+      [
+        args: [
+          source: `${Fns}type Subject = Caught<Invoke<typeof f, [x: 1]>>;`,
+        ],
+        expected: 'nt.caught(() => (f(1)), "Invoke<typeof f, [x: 1]>")',
+      ],
+      [
+        args: [
+          source: `${Fns}type Subject = Caught<Invoke<typeof load, [x: 1]>>;`,
+        ],
+        expected: 'await nt.caught(async () => (await load(1)), "Invoke<typeof load, [x: 1]>")',
+      ],
+      /** a field of the error is read from the caught value, awaited first */
+      [
+        args: [
+          source: `${Fns}type Subject = Caught<Invoke<typeof load, [x: 1]>>["message"];`,
+        ],
+        expected: '(await nt.caught(async () => (await load(1)), "Invoke<typeof load, [x: 1]>")).message',
+      ],
+    ]
+  >;
+
+  /** a spy is a vi.fn, and its calls are what it recorded */
+  export type Spies = Table<
+    typeof harness.printExpression,
+    [
+      [
+        args: [source: "type Subject = Spy<(x: number) => void>;"],
+        expected: "vi.fn()",
+      ],
+      [
+        args: [
+          source: `${Fns}type Subject = Spy<(x: number) => number, typeof f>;`,
+        ],
+        expected: "vi.fn(f)",
+      ],
+      [
+        args: [
+          source: "type Visit = Spy<(x: number) => void>;\ntype Subject = Calls<Visit>;",
+        ],
+        expected: "Visit.mock.calls",
+      ],
+    ]
+  >;
+
+  /** files a test makes and reads go through the runtime, by name */
+  export type Files = Table<
+    typeof harness.printExpression,
+    [
+      [
+        args: [source: 'type Subject = TempDir<{ "a/b.txt": "hi" }>;'],
+        expected: 'nt.tempDir({ "a/b.txt": "hi" })',
+      ],
+      [args: [source: "type Subject = TempDir;"], expected: "nt.tempDir({})"],
+      [
+        args: [
+          source: "type Dir = TempDir;\ntype Subject = Exists<`${Dir}/a.txt`>;",
+        ],
+        expected: "nt.exists(`${Dir}/a.txt`)",
+      ],
+      [
+        args: [source: "type Dir = TempDir;\ntype Subject = ListDir<Dir>;"],
+        expected: "nt.listDir(Dir)",
+      ],
+    ]
+  >;
+
+  /** a template's holes are values; one the checker can fold is the string it folds to */
+  export type Templates = Table<
+    typeof harness.printExpression,
+    [
+      [
+        args: [source: 'type Subject = `b${Repeat<"x", 3>}`;'],
+        expected: '`b${"x".repeat(3)}`',
+      ],
+      [
+        args: [source: 'type N = "n";\ntype Subject = `a${N}c`;'],
+        expected: '"anc"',
+      ],
+      [
+        args: [
+          source: "type Dir = TempDir;\ntype Subject = `${Dir}/\\`tick\\`.txt`;",
+        ],
+        expected: "`${Dir}/\\`tick\\`.txt`",
+      ],
+    ]
+  >;
+
+  /** a setup outside a Given says where it belongs */
+  export type SetupOutsideGiven = Expect<
+    Invoke<
+      typeof harness.expressionWarnings,
+      ['type Subject = StubEnv<"A", "1">;']
+    >,
+    "=",
+    [
+      '`StubEnv<"A", "1">` applies to a whole test: write it among a Given\'s effects',
+    ]
+  >;
 }
 
 // `Uppercase<S>` and its siblings have no body to inline: the checker folds them
@@ -569,19 +780,30 @@ export function assertion(
   };
 }
 
-const isMock = (cx: EmitContext, node: ts.TypeNode): node is ts.TypeReferenceNode =>
+const isMock = (
+  cx: EmitContext,
+  node: ts.TypeNode,
+): node is ts.TypeReferenceNode =>
   ts.isTypeReferenceNode(node) && cx.dslName(node) === "Mock";
 
 const stringIn = (node: ts.TypeNode | undefined) =>
-  node && ts.isLiteralTypeNode(node) && ts.isStringLiteral(node.literal) ? node.literal.text : null;
+  node && ts.isLiteralTypeNode(node) && ts.isStringLiteral(node.literal)
+    ? node.literal.text
+    : null;
 
 const resolves = (cx: EmitContext, path: string) =>
-  !!ts.resolveModuleName(path, cx.source.fileName, cx.program.getCompilerOptions(), ts.sys).resolvedModule;
+  !!ts.resolveModuleName(
+    path,
+    cx.source.fileName,
+    cx.program.getCompilerOptions(),
+    ts.sys,
+  ).resolvedModule;
 
 const MOCK_WARNINGS = {
   shared: (path: string) =>
     `\`${path}\` is a package, which every test in this file shares, so its mock applies to all of them`,
-  unresolved: (path: string) => `\`${path}\` does not resolve from this file, so nothing would be mocked`,
+  unresolved: (path: string) =>
+    `\`${path}\` does not resolve from this file, so nothing would be mocked`,
 };
 
 const NOT_IMPORTED =
@@ -594,9 +816,16 @@ function warnAboutPath(cx: EmitContext, node: ts.TypeNode, path: string) {
 
 // where a binding was imported from, and under what name that module exports it
 function importOf(cx: EmitContext, identifier: ts.Identifier) {
-  const declaration = cx.checker.getSymbolAtLocation(identifier)?.declarations?.[0];
-  const statement = declaration && ts.findAncestor(declaration, ts.isImportDeclaration);
-  if (!declaration || !statement || !ts.isStringLiteral(statement.moduleSpecifier)) return null;
+  const declaration =
+    cx.checker.getSymbolAtLocation(identifier)?.declarations?.[0];
+  const statement =
+    declaration && ts.findAncestor(declaration, ts.isImportDeclaration);
+  if (
+    !declaration ||
+    !statement ||
+    !ts.isStringLiteral(statement.moduleSpecifier)
+  )
+    return null;
   const name = ts.isImportSpecifier(declaration)
     ? (declaration.propertyName ?? declaration.name).text
     : ts.isImportClause(declaration)
@@ -607,26 +836,82 @@ function importOf(cx: EmitContext, identifier: ts.Identifier) {
 
 // a function is a factory, handed `importOriginal`; anything else is the module itself
 function replacementOf(cx: EmitContext, node: ts.TypeNode): Replacement | Expr {
-  const name = ts.isTypeQueryNode(node) && ts.isIdentifier(node.exprName) ? node.exprName : null;
+  const name =
+    ts.isTypeQueryNode(node) && ts.isIdentifier(node.exprName)
+      ? node.exprName
+      : null;
   const imported = name && importOf(cx, name);
   if (!name || !imported) return cx.unsupported(node, NOT_IMPORTED);
-  return { ...imported, factory: cx.checker.getTypeAtLocation(name).getCallSignatures().length > 0 };
+  return {
+    ...imported,
+    factory: cx.checker.getTypeAtLocation(name).getCallSignatures().length > 0,
+  };
 }
 
-const isReplacement = (value: Replacement | Expr): value is Replacement => !("kind" in value);
+const isReplacement = (value: Replacement | Expr): value is Replacement =>
+  !("kind" in value);
 
 // a mock is not a statement of the test: it is printed where vi.mock can take effect
-function registerMock(cx: EmitContext, node: ts.TypeReferenceNode): Statement[] {
+function registerMock(
+  cx: EmitContext,
+  node: ts.TypeReferenceNode,
+): Statement[] {
   const [pathNode, withNode] = node.typeArguments ?? [];
   const path = stringIn(pathNode);
   if (!pathNode || path === null)
-    return [effect(cx.unsupported(node, "needs the path of the module it replaces"), cx.lineOf(node))];
+    return [
+      effect(
+        cx.unsupported(node, "needs the path of the module it replaces"),
+        cx.lineOf(node),
+      ),
+    ];
   warnAboutPath(cx, pathNode, path);
   const replacement = withNode ? replacementOf(cx, withNode) : null;
-  if (replacement && !isReplacement(replacement)) return [effect(replacement, cx.lineOf(node))];
+  if (replacement && !isReplacement(replacement))
+    return [effect(replacement, cx.lineOf(node))];
   cx.test.mocks.push({ path, replacement, line: cx.lineOf(node) });
   return [];
 }
+
+const SETUPS = new Set(["FakeTimers", "StubEnv"]);
+
+const isSetup = (
+  cx: EmitContext,
+  node: ts.TypeNode,
+): node is ts.TypeReferenceNode =>
+  ts.isTypeReferenceNode(node) && SETUPS.has(cx.dslName(node) ?? "");
+
+// like a mock, a setup is no statement of the test: it is printed before the test's own code
+function registerSetup(
+  cx: EmitContext,
+  node: ts.TypeReferenceNode,
+): Statement[] {
+  const [a0, a1] = node.typeArguments ?? [];
+  const line = cx.lineOf(node);
+  if (cx.dslName(node) === "FakeTimers") {
+    cx.test.setup.push({
+      kind: "fakeTimers",
+      now: given(a0) ? lowerExpr(cx, a0) : null,
+      line,
+    });
+    return [];
+  }
+  if (!a0) return [effect(arity(cx, node, 2), line)];
+  cx.test.setup.push({
+    kind: "stubEnv",
+    name: literalText(cx, a0),
+    value: given(a1) ? lowerExpr(cx, a1) : null,
+    line,
+  });
+  return [];
+}
+
+const lowerEffect = (cx: EmitContext, e: ts.TypeNode): Statement[] =>
+  isMock(cx, e)
+    ? registerMock(cx, e)
+    : isSetup(cx, e)
+      ? registerSetup(cx, e)
+      : [effect(lowerExpr(cx, e), cx.lineOf(e))];
 
 export function lowerBody(
   cx: EmitContext,
@@ -652,8 +937,8 @@ export function lowerBody(
     case "Given":
     case "ExpectGiven": {
       if (!a0 || !a1) return notATest();
-      const effects = (ts.isTupleTypeNode(a0) ? elements(a0) : [a0]).flatMap((e) =>
-        isMock(cx, e) ? registerMock(cx, e) : [effect(lowerExpr(cx, e), cx.lineOf(e))],
+      const effects = (ts.isTupleTypeNode(a0) ? elements(a0) : [a0]).flatMap(
+        (e) => lowerEffect(cx, e),
       );
       const then =
         dsl === "Given"
@@ -693,7 +978,11 @@ declare namespace lowerBody {
       [`${Add}type Subject = Expect<Invoke<typeof add, [1, 1]>, "=", 2>;`]
     >,
     "=",
-    ["const actual = add(1, 1);", "const expected = 2;", "expect(actual).toEqual(expected);"]
+    [
+      "const actual = add(1, 1);",
+      "const expected = 2;",
+      "expect(actual).toEqual(expected);",
+    ]
   >;
 
   /** the same statement over a promise, which is the only reason to await */
@@ -706,7 +995,7 @@ declare namespace lowerBody {
     [
       "const actual = await add(1, 1);",
       "const expected = 2;",
-      "expect(actual).toEqual(expected);"
+      "expect(actual).toEqual(expected);",
     ]
   >;
 
@@ -735,7 +1024,7 @@ declare namespace lowerBody {
       "expect.soft(actual1).toEqual(expected1);",
       "const actual2 = 2;",
       "const expected2 = 2;",
-      "expect.soft(actual2).toEqual(expected2);"
+      "expect.soft(actual2).toEqual(expected2);",
     ]
   >;
 
@@ -775,6 +1064,42 @@ declare namespace lowerBody {
     "=",
     [
       'await expect(async () => (add(1, 1))).rejects.toSatisfy((err) => String(err.message).includes("no"));',
+    ]
+  >;
+
+  type Later = `
+    const later = (run: () => void) => { setTimeout(run, 100); };
+  `;
+
+  /** advancing fake time is an effect, awaited where it is written */
+  export type Advance = Expect<
+    Invoke<
+      typeof harness.printStatements,
+      [
+        `${Later}type Run = Spy<() => void>;\ntype Subject = Given<[Invoke<typeof later, [run: Run]>, AdvanceTimers<100>], Expect<Calls<Run>["length"], "=", 1>>;`,
+      ]
+    >,
+    "=",
+    [
+      "later(Run);",
+      "await vi.advanceTimersByTimeAsync(100);",
+      "const actual = Run.mock.calls.length;",
+      "const expected = 1;",
+      "expect(actual).toEqual(expected);",
+    ]
+  >;
+
+  /** a field beyond the four a Throws matcher knows is the error's own, compared as "matches" does */
+  export type ErrorFields = Expect<
+    Invoke<
+      typeof harness.printStatements,
+      [
+        `${Add}type Subject = Throws<Invoke<typeof add, [1, 1]>, { instanceOf: RangeError; code: 64 }>;`,
+      ]
+    >,
+    "=",
+    [
+      "await expect(async () => (add(1, 1))).rejects.toSatisfy((err) => err instanceof RangeError && (expect(err).toMatchObject({ code: 64 }), true));",
     ]
   >;
 
@@ -879,11 +1204,14 @@ export function peelModifiers(cx: EmitContext, type: ts.TypeNode): Peeled {
     else if (dsl === "Todo") [mode, node] = ["test.todo", null];
     else if (dsl === "SkipIfNotFound" && m0 && m1) {
       const path = stringIn(m0);
-      if (path === null) cx.warn(m0, "`SkipIfNotFound` needs the path as a string, relative to the test file");
+      if (path === null)
+        cx.warn(
+          m0,
+          "`SkipIfNotFound` needs the path as a string, relative to the test file",
+        );
       else requires.push(path);
       node = m1;
-    }
-    else if (dsl === "Configure" && m0 && m1) {
+    } else if (dsl === "Configure" && m0 && m1) {
       if (ts.isTypeLiteralNode(m0))
         for (const m of m0.members) {
           if (!ts.isPropertySignature(m) || !ts.isIdentifier(m.name) || !m.type)
@@ -898,13 +1226,34 @@ export function peelModifiers(cx: EmitContext, type: ts.TypeNode): Peeled {
   return { mode, options, requires, node };
 }
 
-export function docTextOf(decl: ts.TypeAliasDeclaration): string | null {
-  const doc = ts.getJSDocCommentsAndTags(decl).find(ts.isJSDoc)?.comment;
-  return doc === undefined
-    ? null
-    : typeof doc === "string"
-      ? doc
-      : doc.map((c) => c.text).join("");
+// a row is a tuple element, which JSDoc does not attach to, so its comment is read as written
+function leadingDocOf(
+  cx: EmitContext,
+  node: ts.Node,
+): { text: string; line: number; tags: Tag[] } | null {
+  const text = cx.source.getFullText();
+  const ranges = ts.getLeadingCommentRanges(text, node.getFullStart()) ?? [];
+  const last = ranges
+    .filter(
+      (r) => text.startsWith("/**", r.pos) && !text.startsWith("/**/", r.pos),
+    )
+    .at(-1);
+  if (!last) return null;
+  const lines = text
+    .slice(last.pos + 3, last.end - 2)
+    .split("\n")
+    .map((l) => l.replace(/^\s*\*?\s?/, "").trimEnd());
+  // as JSDoc reads them: the text until the first `@tag`, then one tag per `@`
+  const at = lines.findIndex((l) => /^@\w/.test(l.trim()));
+  const body = (at === -1 ? lines : lines.slice(0, at)).join("\n").trim();
+  const tags = at === -1 ? [] : tagsIn(lines.slice(at).join("\n"));
+  return body || tags.length
+    ? {
+        text: body,
+        line: cx.source.getLineAndCharacterOfPosition(last.pos).line,
+        tags,
+      }
+    : null;
 }
 
 // awaited: what a table row compares
@@ -920,7 +1269,7 @@ function returnTypeOf(cx: EmitContext, fnNode: ts.TypeNode): ts.Type {
 function tableCases(
   cx: EmitContext,
   node: ts.TypeReferenceNode,
-  meta: Omit<TestCase, "bindings" | "body" | "imports" | "mocks">,
+  meta: Omit<TestCase, "bindings" | "body" | "imports" | "mocks" | "setup">,
 ): TestCase[] {
   const [fnNode, rowsNode] = node.typeArguments ?? [];
   const failing = (at: ts.Node, why: string, row = meta): TestCase => ({
@@ -929,6 +1278,7 @@ function tableCases(
     bindings: [],
     imports: new Map(),
     mocks: [],
+    setup: [],
     body: [effect(cx.unsupported(at, why), cx.lineOf(at))],
   });
   if (!fnNode || !rowsNode || !ts.isTupleTypeNode(rowsNode))
@@ -940,7 +1290,14 @@ function tableCases(
       name: testName(meta.path, `${meta.alias}[${i}]`),
       row: i,
       line: cx.lineOf(row),
+      rowDoc: null as TestCase["rowDoc"],
     };
+    const written = leadingDocOf(cx, row);
+    if (written) {
+      if (written.text)
+        rowMeta.rowDoc = { text: written.text, line: written.line };
+      rowMeta.tags = [...meta.tags, ...written.tags];
+    }
     if (!ts.isTupleTypeNode(row))
       return failing(row, "is not a table row", rowMeta);
     const cells = elements(row);
@@ -953,6 +1310,10 @@ function tableCases(
         callee: callee(cx, fnNode),
         args: args(cx, argsNode),
         awaited: returnsThenable(cx, typeOfCallee(cx, fnNode)),
+        labels: labelsOf(
+          argsNode,
+          typeOfCallee(cx, fnNode).getCallSignatures(),
+        ),
       },
       type: returnTypeOf(cx, fnNode),
     };
@@ -964,6 +1325,7 @@ function tableCases(
       bindings: cx.test.order,
       imports: cx.test.imports,
       mocks: cx.test.mocks,
+      setup: cx.test.setup,
       body,
     };
   });
@@ -986,15 +1348,36 @@ export function lowerAlias(
     row: null,
     line,
     doc: text === null ? null : { text, line },
+    rowDoc: null,
+    tags: tagsOf(decl),
     mode,
     options,
     requires,
   };
-  if (!node) return [{ ...meta, bindings: [], imports: new Map(), mocks: [], body: [] }];
+  if (!node)
+    return [
+      {
+        ...meta,
+        bindings: [],
+        imports: new Map(),
+        mocks: [],
+        setup: [],
+        body: [],
+      },
+    ];
   if (ts.isTypeReferenceNode(node) && cx.dslName(node) === "Table")
     return tableCases(cx, node, meta);
   const body = lowerBody(cx, node, false);
-  return [{ ...meta, bindings: cx.test.order, imports: cx.test.imports, mocks: cx.test.mocks, body }];
+  return [
+    {
+      ...meta,
+      bindings: cx.test.order,
+      imports: cx.test.imports,
+      mocks: cx.test.mocks,
+      setup: cx.test.setup,
+      body,
+    },
+  ];
 }
 
 // `declare namespace A.B {}` is `["A", "B"]`; only statements can hold a namespace
@@ -1067,6 +1450,42 @@ declare namespace lowerAlias {
     Invoke<typeof harness.printAlias, [Suite, "Rows"]>,
     "=",
     'test("add > Rows[0]", () => {\n  const actual = add(1, 1);\n  const expected = 2;\n  expect(actual).toEqual(expected);\n});'
+  >;
+
+  type RowDocs = `
+    const add = (a: number, b: number) => a + b;
+    declare namespace add {
+      /** small sums */
+      export type Rows = Table<typeof add, [
+        [args: [1, 1], expected: 2],
+        /** a negative cancels a positive */
+        [args: [-1, 1], expected: 0],
+      ]>;
+    }
+  `;
+
+  /** a row's own comment describes that row; a row without one is described by its table */
+  export type RowDoc = Expect<
+    Invoke<typeof harness.printAlias, [RowDocs, "Rows"]>,
+    "=",
+    '/** small sums */\ntest("add > Rows[0]", () => {\n  const actual = add(1, 1);\n  const expected = 2;\n  expect(actual).toEqual(expected);\n});\n\n/** a negative cancels a positive */\ntest("add > Rows[1]", () => {\n  const actual = add(-1, 1);\n  const expected = 0;\n  expect(actual).toEqual(expected);\n});'
+  >;
+
+  type Setups = `
+    const kind = () => process.env.BACKEND;
+    declare namespace kind {
+      export type Fake = Given<
+        [Invoke<typeof kind>, StubEnv<"BACKEND", "fake">, FakeTimers<"2026-01-01T00:00:00.000Z">],
+        Expect<Invoke<typeof kind>, "=", "fake">
+      >;
+    }
+  `;
+
+  /** a setup is printed first, wherever it was written among the effects, and undone when the test ends */
+  export type Setup = Expect<
+    Invoke<typeof harness.printAlias, [Setups, "Fake"]>,
+    "=",
+    'test("kind > Fake", () => {\n  vi.stubEnv("BACKEND", "fake");\n  vi.useFakeTimers({ now: new Date("2026-01-01T00:00:00.000Z") });\n  onTestFinished(() => { vi.useRealTimers(); });\n  onTestFinished(() => { vi.unstubAllEnvs(); });\n  kind();\n  const actual = kind();\n  const expected = "fake";\n  expect(actual).toEqual(expected);\n});'
   >;
 
   /** `Todo` has no body at all */

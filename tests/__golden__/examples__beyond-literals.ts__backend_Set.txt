@@ -1,0 +1,13 @@
+import { test, expect, vi, onTestFinished } from "vitest";
+
+/** Which backend the stack runs on: the person's setting, or qemu. */
+const backend = () => process.env.NESTS_EXAMPLE_BACKEND ?? "qemu";
+
+/** the variable decides, for this test alone */
+test("backend > Set", () => {
+  vi.stubEnv("NESTS_EXAMPLE_BACKEND", "fake");
+  onTestFinished(() => { vi.unstubAllEnvs(); });
+  const actual = backend();
+  const expected = "fake";
+  expect(actual).toEqual(expected);
+});

@@ -9,7 +9,8 @@ import {
 import { allNeeds, headerLines, printTest } from "./print.mts";
 
 import type ts from "@typescript/typescript6";
-import type { EmitInput, Line, Warning } from "./context.mts";
+import type { EmitContext, EmitInput, Line, Warning } from "./context.mts";
+import type { TestCase } from "./ir.mts";
 import type { EmittedTest } from "./print.mts";
 
 export type { EmitContext, EmitInput, Line, Warning } from "./context.mts";
@@ -47,23 +48,44 @@ export type Emitted = {
   warnings: Warning[];
 };
 
-export function emitTests({ program, source }: EmitInput, root?: string): Emitted {
+export type Lowered = {
+  cx: EmitContext;
+  tests: TestCase[];
+  /** The aliases the tests came from, for the mistakes TypeScript reports in them. */
+  aliases: ts.TypeAliasDeclaration[];
+};
+
+/** A file's tests as the printer's IR, unprinted: what the docs and the editor read. */
+export function lowerTests(
+  { program, source }: EmitInput,
+  root?: string,
+): Lowered {
   const cx = createEmitContext(program, source);
-  const tests: EmittedTest[] = [];
+  const tests: TestCase[] = [];
   const aliases: ts.TypeAliasDeclaration[] = [];
   for (const { segs, body } of namespaces(source)) {
     if (root && segs[0] !== root) continue;
     for (const stmt of body.statements)
       if (isExportedTypeAlias(stmt) && isTest(cx, stmt.type)) {
         aliases.push(stmt);
-        tests.push(...lowerAlias(cx, stmt, segs).map(printTest));
+        tests.push(...lowerAlias(cx, stmt, segs));
       }
   }
+  return { cx, tests, aliases };
+}
+
+export function emitTests(input: EmitInput, root?: string): Emitted {
+  const { cx, aliases, ...lowered } = lowerTests(input, root);
+  const tests = lowered.tests.map(printTest);
   // written last: only once every test has said what it needs
   const header = tests.length
-    ? headerLines(allNeeds(tests.map((t) => t.needs)), source.fileName)
+    ? headerLines(allNeeds(tests.map((t) => t.needs)), input.source.fileName)
     : [];
-  return { header, tests, warnings: [...cx.warnings, ...explainedMistakes(cx, aliases)] };
+  return {
+    header,
+    tests,
+    warnings: [...cx.warnings, ...explainedMistakes(cx, aliases)],
+  };
 }
 
 declare namespace emitTests {
