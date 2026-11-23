@@ -4,6 +4,28 @@
 
 - [Internal](Namespace.Internal.md)
 
+## AdvanceTimers
+
+> **AdvanceTimers**\<`Ms`\> = [`EffectNode`](Namespace.Internal.md#effectnode)\<`"advanceTimers"`, `Ms`\>
+
+Move fake time forward, running every timer that falls due, as one of a
+`Given`'s effects. Needs `FakeTimers`.
+
+```ts
+export type Fires = Given<
+  [FakeTimers, Invoke<typeof later, [run: Run]>, AdvanceTimers<1_000>],
+  Expect<Calls<Run>, "isNotEmpty">
+>;
+```
+
+### Type Parameters
+
+#### Ms
+
+`Ms` _extends_ `number`
+
+---
+
 ## Call
 
 > **Call**\<`Receiver`, `Method`, `Args`\> = `Awaited`\<[`ReturnFor`](Namespace.Internal.md#returnfor)\<`Receiver`\[`Method`\], `Args`\>\> \| [`Phantom`](Namespace.Internal.md#phantom)\<`Args`\>
@@ -32,13 +54,68 @@ export type Increments = Given<
 
 #### Method
 
-`Method` *extends* [`MethodsCallableWith`](Namespace.Internal.md#methodscallablewith)\<`Receiver`, `Args`\>
+`Method` _extends_ [`MethodsCallableWith`](Namespace.Internal.md#methodscallablewith)\<`Receiver`, `Args`\>
 
 #### Args
 
-`Args` *extends* [`ArgumentsOf`](Namespace.Internal.md#argumentsof)\<`Receiver`\[`Method`\]\> \| \[\] = \[\]
+`Args` _extends_ [`ArgumentsOf`](Namespace.Internal.md#argumentsof)\<`Receiver`\[`Method`\]\> \| \[\] = \[\]
 
-***
+---
+
+## Calls
+
+> **Calls**\<`S`\> = `S`\[`"mock"`\]\[`"calls"`\]
+
+The arguments of every call a `Spy` received, in order: one tuple per call.
+
+```ts
+export type Twice = Given<
+  [Invoke<typeof notify, [send: Send]>, Invoke<typeof notify, [send: Send]>],
+  Expect<Calls<Send>["length"], "=", 2>
+>;
+```
+
+### Type Parameters
+
+#### S
+
+`S` _extends_ `object`
+
+---
+
+## Caught
+
+> **Caught**\<`Expr`, `E`\> = `E` \| [`Phantom`](Namespace.Internal.md#phantom)\<`Expr`\>
+
+The error an expression throws, or the reason the promise it returns
+rejects, as a value. The test fails if it does neither. Name the error's
+class as `E` to assert on the fields it has beyond a message:
+
+```ts
+type Refused = Caught<Invoke<typeof clone, [repo: "acme"]>, Refusal>;
+
+export type SaysWhatToDo = Expect<
+  Refused,
+  "matches",
+  { fix: "desolate doctor"; code: 64 }
+>;
+export type Message = Expect<Refused["message"], "includes", "acme">;
+```
+
+Bind it to an alias to read several fields of the same error: an inline
+`Caught` written twice runs its expression twice.
+
+### Type Parameters
+
+#### Expr
+
+`Expr`
+
+#### E
+
+`E` = `Error`
+
+---
 
 ## Configure
 
@@ -49,7 +126,14 @@ Apply a `Config` to a whole test (or tuple of tests).
 ```ts
 export type Big = Configure<
   { timeout: 30_000; retries: 1 },
-  Expect<Invoke<typeof normalize, [xs: Invoke<typeof range, [n: 1_000_000]>]>["length"], "=", 1_000_000>
+  Expect<
+    Invoke<
+      typeof normalize,
+      [xs: Invoke<typeof range, [n: 1_000_000]>]
+    >["length"],
+    "=",
+    1_000_000
+  >
 >;
 ```
 
@@ -57,13 +141,13 @@ export type Big = Configure<
 
 #### C
 
-`C` *extends* [`Config`](Namespace.Internal.md#config-1)
+`C` _extends_ [`Config`](Namespace.Internal.md#config-1)
 
 #### T
 
-`T` *extends* [`Test`](Namespace.Internal.md#test-1)
+`T` _extends_ [`Test`](Namespace.Internal.md#test-1)
 
-***
+---
 
 ## Construct
 
@@ -85,13 +169,13 @@ export type StartsAt = Expect<Counter["count"], "=", 10>;
 
 #### C
 
-`C` *extends* [`ConstructorFor`](Namespace.Internal.md#constructorfor)\<`Args`\>
+`C` _extends_ [`ConstructorFor`](Namespace.Internal.md#constructorfor)\<`Args`\>
 
 #### Args
 
-`Args` *extends* `ConstructorParameters`\<`C`\> \| \[\] = \[\]
+`Args` _extends_ `ConstructorParameters`\<`C`\> \| \[\] = \[\]
 
-***
+---
 
 ## Env
 
@@ -104,34 +188,59 @@ with no default fail with a clear message.
 ```ts
 type Domain = Env<"TEST_EMAIL_DOMAIN", "example.com">;
 
-export type Invites = Expect<Invoke<typeof inviteAddress, [user: "ada", domain: Domain]>, "endsWith", "example.com">;
+export type Invites = Expect<
+  Invoke<typeof inviteAddress, [user: "ada", domain: Domain]>,
+  "endsWith",
+  "example.com"
+>;
 ```
 
 ### Type Parameters
 
 #### Name
 
-`Name` *extends* `string`
+`Name` _extends_ `string`
 
 #### Default
 
-`Default` *extends* `string` \| `undefined` = `undefined`
+`Default` _extends_ `string` \| `undefined` = `undefined`
 
-***
+---
+
+## Exists
+
+> **Exists**\<`Path`\> = `boolean` \| [`Phantom`](Namespace.Internal.md#phantom)\<`Path`\>
+
+Whether anything is at a path, read when the expectation runs.
+
+```ts
+export type Removed = Given<
+  Invoke<typeof clean, [dir: Dir]>,
+  Expect<Exists<`${Dir}/cache`>, "falsy">
+>;
+```
+
+### Type Parameters
+
+#### Path
+
+`Path` _extends_ `string`
+
+---
 
 ## Expect
 
-> **Expect**\<`Actual`, `Condition`, `Expected`, `DisplayOrConfig`\> = `Expected` *extends* [`Nothing`](#nothing) ? `Condition` *extends* [`NullaryCondition`](Namespace.Internal.md#nullarycondition) \| `"throws"` ? [`Assertion`](Namespace.Internal.md#assertion)\<`Actual`, `Condition`, `Expected`, `DisplayOrConfig`\> : [`MissingExpected`](Namespace.Internal.md#missingexpected)\<`Condition`\> : [`Assertion`](Namespace.Internal.md#assertion)\<`Actual`, `Condition`, `Expected`, `DisplayOrConfig`\>
+> **Expect**\<`Actual`, `Condition`, `Expected`, `DisplayOrConfig`\> = `Expected` _extends_ [`Nothing`](#nothing) ? `Condition` _extends_ [`NullaryCondition`](Namespace.Internal.md#nullarycondition) \| `"throws"` ? [`Assertion`](Namespace.Internal.md#assertion)\<`Actual`, `Condition`, `Expected`, `DisplayOrConfig`\> : [`MissingExpected`](Namespace.Internal.md#missingexpected)\<`Condition`\> : [`Assertion`](Namespace.Internal.md#assertion)\<`Actual`, `Condition`, `Expected`, `DisplayOrConfig`\>
 
 The core assertion.
 
 ```ts
-Expect<Invoke<typeof add, [a: 4, b: 5]>, "=", 9>
-Expect<Invoke<typeof greet, [name: "Ada"]>, "startsWith", "Hello">
-Expect<Invoke<typeof sqrt, [x: 2]>, ["~=", 1e-12], 1.4142135623730951>
-Expect<Invoke<typeof parse, [source: "{"]>, "throws", SyntaxError>
-Expect<Invoke<typeof list>, "isEmpty">
-Expect<Pixels, "=", ExpectedPixels, "./display-image.html">
+Expect<Invoke<typeof add, [a: 4, b: 5]>, "=", 9>;
+Expect<Invoke<typeof greet, [name: "Ada"]>, "startsWith", "Hello">;
+Expect<Invoke<typeof sqrt, [x: 2]>, ["~=", 1e-12], 1.4142135623730951>;
+Expect<Invoke<typeof parse, [source: "{"]>, "throws", SyntaxError>;
+Expect<Invoke<typeof list>, "isEmpty">;
+Expect<Pixels, "=", ExpectedPixels, "./display-image.html">;
 ```
 
 `Expected` is constrained by `Actual` and `Condition` together, so mismatched
@@ -145,17 +254,17 @@ shapes are compile errors — the IDE tells you before the test runs.
 
 #### Condition
 
-`Condition` *extends* [`ConditionsFor`](Namespace.Internal.md#conditionsfor)\<`Actual`\>
+`Condition` _extends_ [`ConditionsFor`](Namespace.Internal.md#conditionsfor)\<`Actual`\>
 
 #### Expected
 
-`Expected` *extends* [`ExpectedFor`](Namespace.Internal.md#expectedfor)\<`Actual`, `Condition`\> \| [`Snapshot`](#snapshot)\<`any`\> \| [`Nothing`](#nothing) = [`Nothing`](#nothing)
+`Expected` _extends_ [`ExpectedFor`](Namespace.Internal.md#expectedfor)\<`Actual`, `Condition`\> \| [`Snapshot`](#snapshot)\<`any`\> \| [`Nothing`](#nothing) = [`Nothing`](#nothing)
 
 #### DisplayOrConfig
 
-`DisplayOrConfig` *extends* `undefined` \| [`DisplayPage`](Namespace.Internal.md#displaypage) \| [`Config`](Namespace.Internal.md#config-1) = `undefined`
+`DisplayOrConfig` _extends_ `undefined` \| [`DisplayPage`](Namespace.Internal.md#displaypage) \| [`Config`](Namespace.Internal.md#config-1) = `undefined`
 
-***
+---
 
 ## ExpectGiven
 
@@ -164,7 +273,12 @@ shapes are compile errors — the IDE tells you before the test runs.
 `Given` + `Expect` in one call (the original scaffold's shape).
 
 ```ts
-export type Increments = ExpectGiven<Call<Counter, "increment">, Counter["count"], "=", 11>;
+export type Increments = ExpectGiven<
+  Call<Counter, "increment">,
+  Counter["count"],
+  "=",
+  11
+>;
 ```
 
 ### Type Parameters
@@ -179,24 +293,48 @@ export type Increments = ExpectGiven<Call<Counter, "increment">, Counter["count"
 
 #### Condition
 
-`Condition` *extends* [`ConditionsFor`](Namespace.Internal.md#conditionsfor)\<`Actual`\>
+`Condition` _extends_ [`ConditionsFor`](Namespace.Internal.md#conditionsfor)\<`Actual`\>
 
 #### Expected
 
-`Expected` *extends* [`ExpectedFor`](Namespace.Internal.md#expectedfor)\<`Actual`, `Condition`\> \| [`Snapshot`](#snapshot)\<`any`\> \| [`Nothing`](#nothing) = [`Nothing`](#nothing)
+`Expected` _extends_ [`ExpectedFor`](Namespace.Internal.md#expectedfor)\<`Actual`, `Condition`\> \| [`Snapshot`](#snapshot)\<`any`\> \| [`Nothing`](#nothing) = [`Nothing`](#nothing)
 
 #### DisplayOrConfig
 
-`DisplayOrConfig` *extends* `undefined` \| [`DisplayPage`](Namespace.Internal.md#displaypage) \| [`Config`](Namespace.Internal.md#config-1) = `undefined`
+`DisplayOrConfig` _extends_ `undefined` \| [`DisplayPage`](Namespace.Internal.md#displaypage) \| [`Config`](Namespace.Internal.md#config-1) = `undefined`
 
-***
+---
+
+## FakeTimers
+
+> **FakeTimers**\<`Now`\> = [`SetupNode`](Namespace.Internal.md#setupnode)\<`"fakeTimers"`, `Now`\>
+
+Fake timers for one test, as one of a `Given`'s effects: `setTimeout`,
+`setInterval` and `Date` are Vitest's fakes until the test ends. `Now` sets
+the clock (an ISO date or milliseconds since the epoch). Whatever its place
+among the effects, it applies before the test's code runs, as `Mock` does.
+
+```ts
+export type OnceAfterABurst = Given<
+  [FakeTimers, Invoke<Debounced>, Invoke<Debounced>, AdvanceTimers<100>],
+  Expect<Calls<Run>["length"], "=", 1>
+>;
+```
+
+### Type Parameters
+
+#### Now
+
+`Now` _extends_ `string` \| `number` \| `undefined` = `undefined`
+
+---
 
 ## Fixture
 
 > **Fixture**\<`T`, `Initial`\> = `T` \| [`Phantom`](Namespace.Internal.md#phantom)\<`Initial`\>
 
-A typed fixture: declares the *type* the rest of the test sees and the
-literal *initial value* the test materializes. Solves the problem that a
+A typed fixture: declares the _type_ the rest of the test sees and the
+literal _initial value_ the test materializes. Solves the problem that a
 literal `{ name: "parker" }` has type `{ name: "parker" }`, which would
 reject an expectation of `"olivia"` after a mutation.
 
@@ -219,19 +357,19 @@ Prefer this over `Widen` when you know the intended shape.
 
 #### Initial
 
-`Initial` *extends* `T` & [`Literal`](Namespace.Internal.md#literal)
+`Initial` _extends_ `T` & [`Literal`](Namespace.Internal.md#literal)
 
-***
+---
 
 ## FromFile
 
-> **FromFile**\<`Path`, `Format`, `Json`\> = `Format` *extends* `"text"` ? `string` : `Format` *extends* `"bytes"` ? `Uint8Array` : `Json` \| [`Phantom`](Namespace.Internal.md#phantom)\<`Path`\>
+> **FromFile**\<`Path`, `Format`, `Json`\> = `Format` _extends_ `"text"` ? `string` : `Format` _extends_ `"bytes"` ? `Uint8Array` : `Json` \| [`Phantom`](Namespace.Internal.md#phantom)\<`Path`\>
 
 Load a file relative to the test file at runtime.
 
 ```ts
-type Png = FromFile<"./fixtures/logo.png", "bytes">;      // Uint8Array
-type Csv = FromFile<"./fixtures/rows.csv">;                // string
+type Png = FromFile<"./fixtures/logo.png", "bytes">; // Uint8Array
+type Csv = FromFile<"./fixtures/rows.csv">; // string
 type Cfg = FromFile<"./fixtures/config.json", "json", AppConfig>;
 
 export type Parses = Expect<Invoke<typeof parseCsv, [text: Csv]>, "isNotEmpty">;
@@ -241,17 +379,17 @@ export type Parses = Expect<Invoke<typeof parseCsv, [text: Csv]>, "isNotEmpty">;
 
 #### Path
 
-`Path` *extends* `string`
+`Path` _extends_ `string`
 
 #### Format
 
-`Format` *extends* [`FileFormat`](Namespace.Internal.md#fileformat) = `"text"`
+`Format` _extends_ [`FileFormat`](Namespace.Internal.md#fileformat) = `"text"`
 
 #### Json
 
 `Json` = `unknown`
 
-***
+---
 
 ## Given
 
@@ -267,13 +405,10 @@ export type Rename = Given<
 >;
 
 export type Lifecycle = Given<
+  [Call<Store, "open">, Call<Store, "put", [key: "k", value: 1]>],
   [
-     Call<Store, "open">,
-     Call<Store, "put", [key: "k", value: 1]>
-  ],
-  [
-     Expect<Call<Store, "get", [key: "k"]>, "=", 1>,
-     Expect<Store["size"], "=", 1>
+    Expect<Call<Store, "get", [key: "k"]>, "=", 1>,
+    Expect<Store["size"], "=", 1>,
   ]
 >;
 ```
@@ -286,9 +421,9 @@ export type Lifecycle = Given<
 
 #### Then
 
-`Then` *extends* [`Test`](Namespace.Internal.md#test-1)
+`Then` _extends_ [`Test`](Namespace.Internal.md#test-1)
 
-***
+---
 
 ## Invoke
 
@@ -300,8 +435,8 @@ Call a function with literal arguments. Evaluates to the (awaited) return type.
 `Args` can be left out when no parameter is required.
 
 ```ts
-type Sum = Invoke<typeof add, [a: 4, b: 5]>;               // number  ⇒ 9 at runtime
-type Name = Invoke<typeof user.getName>;           // `this` is `user`; no arguments, no tuple
+type Sum = Invoke<typeof add, [a: 4, b: 5]>; // number  ⇒ 9 at runtime
+type Name = Invoke<typeof user.getName>; // `this` is `user`; no arguments, no tuple
 type Doubled = Invoke<typeof map, [arr: [1, 2], fn: typeof double]>; // functions are literals too
 
 export type Simple = Expect<Invoke<typeof add, [a: 4, b: 5]>, "=", 9>;
@@ -311,13 +446,34 @@ export type Simple = Expect<Invoke<typeof add, [a: 4, b: 5]>, "=", 9>;
 
 #### F
 
-`F` *extends* [`CalleeFor`](Namespace.Internal.md#calleefor)\<`Args`\>
+`F` _extends_ [`CalleeFor`](Namespace.Internal.md#calleefor)\<`Args`\>
 
 #### Args
 
-`Args` *extends* [`ArgumentsOf`](Namespace.Internal.md#argumentsof)\<`F`\> \| \[\] = \[\]
+`Args` _extends_ [`ArgumentsOf`](Namespace.Internal.md#argumentsof)\<`F`\> \| \[\] = \[\]
 
-***
+---
+
+## ListDir
+
+> **ListDir**\<`Path`\> = `string`[] \| [`Phantom`](Namespace.Internal.md#phantom)\<`Path`\>
+
+The names in a directory, sorted, read when the expectation runs.
+
+```ts
+export type Wrote = Given<
+  Invoke<typeof save, [dir: Dir]>,
+  Expect<ListDir<Dir>, "=", ["state.json"]>
+>;
+```
+
+### Type Parameters
+
+#### Path
+
+`Path` _extends_ `string`
+
+---
 
 ## Mock
 
@@ -341,7 +497,10 @@ export type Faked = Given<
 >;
 
 export type Stubbed = Given<
-  [Mock<"./rates.ts">, Call<Mocked<typeof exchangeRate>, "mockReturnValue", [value: 2]>],
+  [
+    Mock<"./rates.ts">,
+    Call<Mocked<typeof exchangeRate>, "mockReturnValue", [value: 2]>,
+  ],
   Expect<Invoke<typeof inEuros, [dollars: 10]>, "=", 20>
 >;
 ```
@@ -350,13 +509,13 @@ export type Stubbed = Given<
 
 #### Path
 
-`Path` *extends* `string`
+`Path` _extends_ `string`
 
 #### With
 
-`With` *extends* `object` \| `undefined` = `undefined`
+`With` _extends_ `object` \| `undefined` = `undefined`
 
-***
+---
 
 ## Mocked
 
@@ -366,7 +525,10 @@ A function a `Mock` replaced, typed as the `vi.fn()` it now is.
 
 ```ts
 export type Stubbed = Given<
-  [Mock<"./rates.ts">, Call<Mocked<typeof exchangeRate>, "mockReturnValue", [value: 2]>],
+  [
+    Mock<"./rates.ts">,
+    Call<Mocked<typeof exchangeRate>, "mockReturnValue", [value: 2]>,
+  ],
   Expect<Invoke<typeof inEuros, [dollars: 10]>, "=", 20>
 >;
 ```
@@ -375,9 +537,9 @@ export type Stubbed = Given<
 
 #### F
 
-`F` *extends* [`AnyFn`](Namespace.Internal.md#anyfn)
+`F` _extends_ [`AnyFn`](Namespace.Internal.md#anyfn)
 
-***
+---
 
 ## Nothing
 
@@ -387,10 +549,15 @@ No expected value: what a condition like `"truthy"` or `"throws"` takes. Written
 out only to reach the argument after it, a display page or a config.
 
 ```ts
-export type Ready = Expect<Invoke<typeof isReady>, "truthy", Nothing, { timeout: 50 }>;
+export type Ready = Expect<
+  Invoke<typeof isReady>,
+  "truthy",
+  Nothing,
+  { timeout: 50 }
+>;
 ```
 
-***
+---
 
 ## Only
 
@@ -406,9 +573,35 @@ export type Focus = Only<Expect<Invoke<typeof add, [a: 4, b: 5]>, "=", 9>>;
 
 #### T
 
-`T` *extends* [`Test`](Namespace.Internal.md#test-1)
+`T` _extends_ [`Test`](Namespace.Internal.md#test-1)
 
-***
+---
+
+## Repeat
+
+> **Repeat**\<`Text`, `Count`\> = `string` \| [`Phantom`](Namespace.Internal.md#phantom)\<\[`Text`, `Count`\]\>
+
+`Text` repeated `Count` times: a value too long to write out, said by its
+length. Inside a template literal it builds one of a given shape.
+
+```ts
+export type AtTheBound = Expect<
+  Invoke<typeof isBranch, [value: `b${Repeat<"x", 199>}`]>,
+  "truthy"
+>;
+```
+
+### Type Parameters
+
+#### Text
+
+`Text` _extends_ `string`
+
+#### Count
+
+`Count` _extends_ `number`
+
+---
 
 ## Skip
 
@@ -417,20 +610,23 @@ export type Focus = Only<Expect<Invoke<typeof add, [a: 4, b: 5]>, "=", 9>>;
 Skip a test. It is discovered and shown as skipped, never run.
 
 ```ts
-export type Flaky = Skip<Expect<Invoke<typeof fetchRates>, "isNotEmpty">, "rate limited in CI">;
+export type Flaky = Skip<
+  Expect<Invoke<typeof fetchRates>, "isNotEmpty">,
+  "rate limited in CI"
+>;
 ```
 
 ### Type Parameters
 
 #### T
 
-`T` *extends* [`Test`](Namespace.Internal.md#test-1)
+`T` _extends_ [`Test`](Namespace.Internal.md#test-1)
 
 #### Reason
 
-`Reason` *extends* `string` = `""`
+`Reason` _extends_ `string` = `""`
 
-***
+---
 
 ## SkipIfNotFound
 
@@ -444,7 +640,10 @@ package is installed.
 ```ts
 export type Seeded = SkipIfNotFound<
   "./fixtures/users.json",
-  Expect<Invoke<typeof load, [users: FromFile<"./fixtures/users.json", "json">]>, "isNotEmpty">
+  Expect<
+    Invoke<typeof load, [users: FromFile<"./fixtures/users.json", "json">]>,
+    "isNotEmpty"
+  >
 >;
 ```
 
@@ -452,13 +651,13 @@ export type Seeded = SkipIfNotFound<
 
 #### Path
 
-`Path` *extends* `string`
+`Path` _extends_ `string`
 
 #### T
 
-`T` *extends* [`Test`](Namespace.Internal.md#test-1)
+`T` _extends_ [`Test`](Namespace.Internal.md#test-1)
 
-***
+---
 
 ## Snapshot
 
@@ -470,7 +669,11 @@ later runs it compares against that file. Updating snapshots is a runner
 command, not a code change.
 
 ```ts
-export type Renders = Expect<Invoke<typeof render, [tree: Tree]>, "=", Snapshot>;
+export type Renders = Expect<
+  Invoke<typeof render, [tree: Tree]>,
+  "=",
+  Snapshot
+>;
 export type Both = [
   Expect<Invoke<typeof render, [tree: Tree]>, "=", Snapshot<"html">>,
   Expect<Invoke<typeof toText, [tree: Tree]>, "=", Snapshot<"text">>,
@@ -481,9 +684,64 @@ export type Both = [
 
 #### Name
 
-`Name` *extends* `string` = `""`
+`Name` _extends_ `string` = `""`
 
-***
+---
+
+## Spy
+
+> **Spy**\<`F`, `Impl`\> = `MockedFunction`\<`F`\> \| [`Phantom`](Namespace.Internal.md#phantom)\<`Impl`\>
+
+A recorded function: a `vi.fn()`, or `vi.fn(impl)` when an implementation is
+given. Pass it where the code takes a callback, then read what it was given
+with `Calls`. Bind it to an alias so the test and the code hold the same one.
+
+```ts
+type Visit = Spy<(x: number) => void>;
+
+export type InOrder = Given<
+  Invoke<typeof each, [xs: [1, 2, 3], visit: Visit]>,
+  Expect<Calls<Visit>, "=", [[1], [2], [3]]>
+>;
+```
+
+### Type Parameters
+
+#### F
+
+`F` _extends_ [`AnyFn`](Namespace.Internal.md#anyfn) = (...`args`) => `any`
+
+#### Impl
+
+`Impl` _extends_ `F` \| `undefined` = `undefined`
+
+---
+
+## StubEnv
+
+> **StubEnv**\<`Name`, `Value`\> = [`SetupNode`](Namespace.Internal.md#setupnode)\<`"stubEnv"`, \[`Name`, `Value`\]\>
+
+An environment variable set (or, as `undefined`, unset) for one test, and
+put back when it ends. Like `Mock`, it applies before the test's code runs.
+
+```ts
+export type FakeBackend = Given<
+  StubEnv<"DESOLATE_BACKEND", "fake">,
+  Expect<Invoke<typeof backendKind>, "=", "fake">
+>;
+```
+
+### Type Parameters
+
+#### Name
+
+`Name` _extends_ `string`
+
+#### Value
+
+`Value` _extends_ `string` \| `undefined`
+
+---
 
 ## Table
 
@@ -496,24 +754,57 @@ Each row is reported as its own case (`Tests > add > Table[2]`).
 elements, and name the arguments inside `args` as the function names its parameters.
 
 ```ts
-export type Cases = Table<typeof add, [
-  [args: [a: 1, b: 2], expected: 3],
-  [args: [a: -1, b: 1], expected: 0],
-  [args: [a: 0.1, b: 0.2], condition: ["~=", 1e-9], expected: 0.3],
-]>;
+export type Cases = Table<
+  typeof add,
+  [
+    [args: [a: 1, b: 2], expected: 3],
+    [args: [a: -1, b: 1], expected: 0],
+    [args: [a: 0.1, b: 0.2], condition: ["~=", 1e-9], expected: 0.3],
+  ]
+>;
 ```
 
 ### Type Parameters
 
 #### F
 
-`F` *extends* [`AnyFn`](Namespace.Internal.md#anyfn)
+`F` _extends_ [`AnyFn`](Namespace.Internal.md#anyfn)
 
 #### Rows
 
-`Rows` *extends* readonly [`Row`](Namespace.Internal.md#row)\<`F`\>[]
+`Rows` _extends_ readonly [`Row`](Namespace.Internal.md#row)\<`F`\>[]
 
-***
+---
+
+## TempDir
+
+> **TempDir**\<`Files`\> = `string` \| [`Phantom`](Namespace.Internal.md#phantom)\<`Files`\>
+
+A fresh directory for one test, holding `Files` (paths relative to it, each
+with its text), and removed when the test ends. It evaluates to the
+directory's absolute path, so a path inside it is a template literal:
+
+```ts
+type Dir = TempDir<{ "in/a.txt": "hello" }>;
+
+export type Copies = Given<
+  Invoke<typeof copy, [from: `${Dir}/in/a.txt`, to: `${Dir}/out.txt`]>,
+  [
+    Expect<FromFile<`${Dir}/out.txt`>, "=", "hello">,
+    Expect<ListDir<Dir>, "=", ["in", "out.txt"]>,
+  ]
+>;
+```
+
+Bind it to an alias: every mention of the alias is the same directory.
+
+### Type Parameters
+
+#### Files
+
+`Files` _extends_ `object` = \{ \}
+
+---
 
 ## Throws
 
@@ -525,7 +816,10 @@ error class, a message substring, or an object of the fields that must match.
 ```ts
 export type Errors = [
   Throws<Invoke<typeof parse, [source: "(1 + 2"]>, ParseError>,
-  Throws<Invoke<typeof parse, [source: "1 +"]>, { instanceOf: ParseError; matches: "unexpected .*end of input" }>,
+  Throws<
+    Invoke<typeof parse, [source: "1 +"]>,
+    { instanceOf: ParseError; matches: "unexpected .*end of input" }
+  >,
   Throws<Invoke<typeof parse, [source: "1 2"]>, "trailing">,
   Throws<Invoke<typeof parse, [source: ""]>>, // any throw at all
 ];
@@ -539,9 +833,9 @@ export type Errors = [
 
 #### Matcher
 
-`Matcher` *extends* [`ExpectedFor`](Namespace.Internal.md#expectedfor)\<`Expr`, `"throws"`\> = [`Nothing`](#nothing)
+`Matcher` _extends_ [`ExpectedFor`](Namespace.Internal.md#expectedfor)\<`Expr`, `"throws"`\> = [`Nothing`](#nothing)
 
-***
+---
 
 ## Todo
 
@@ -550,20 +844,21 @@ export type Errors = [
 A planned test with no body yet. Shown as "todo".
 
 ```ts
-export type Emoji = Todo<"decide whether emoji should be stripped or transliterated">;
+export type Emoji =
+  Todo<"decide whether emoji should be stripped or transliterated">;
 ```
 
 ### Type Parameters
 
 #### Reason
 
-`Reason` *extends* `string` = `""`
+`Reason` _extends_ `string` = `""`
 
-***
+---
 
 ## Widen
 
-> **Widen**\<`T`\> = `T` *extends* `string` ? `string` : `T` *extends* `number` ? `number` : `T` *extends* `boolean` ? `boolean` : `T` *extends* `bigint` ? `bigint` : `T` *extends* `symbol` ? `symbol` : `T` *extends* readonly infer U[] ? [`Widen`](#widen)\<`U`\>[] : `T` *extends* `object` ? `{ -readonly [K in keyof T]: Widen<T[K]> }` : `T`
+> **Widen**\<`T`\> = `T` _extends_ `string` ? `string` : `T` _extends_ `number` ? `number` : `T` _extends_ `boolean` ? `boolean` : `T` _extends_ `bigint` ? `bigint` : `T` _extends_ `symbol` ? `symbol` : `T` _extends_ readonly infer U[] ? [`Widen`](#widen)\<`U`\>[] : `T` _extends_ `object` ? `{ -readonly [K in keyof T]: Widen<T[K]> }` : `T`
 
 Widen literal types to their primitive base (`"parker"` → `string`,
 `[1, 2]` → `number[]`) while the test still materializes the literal.
@@ -580,3 +875,29 @@ export type Mean = Expect<Invoke<typeof mean, [xs: Sample]>, "=", 5>;
 #### T
 
 `T`
+
+---
+
+## WriteFile
+
+> **WriteFile**\<`Path`, `Text`\> = [`EffectNode`](Namespace.Internal.md#effectnode)\<`"writeFile"`, \[`Path`, `Text`\]\>
+
+Write a file, its directories made, as one of a `Given`'s effects: what
+something else left where the code will look.
+
+```ts
+export type Rereads = Given<
+  [Invoke<typeof load, [dir: Dir]>, WriteFile<`${Dir}/config.json`, "{}">],
+  Expect<Invoke<typeof load, [dir: Dir]>, "=", {}>
+>;
+```
+
+### Type Parameters
+
+#### Path
+
+`Path` _extends_ `string`
+
+#### Text
+
+`Text` _extends_ `string`

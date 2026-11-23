@@ -1,0 +1,32 @@
+import { test, expect } from "vitest";
+import * as nt from "../release/vite-plugin/runtime.mts";
+
+/** A refusal: what went wrong, what to do instead, and the exit code a script sees. */
+class Refusal extends Error {
+  readonly fix: string;
+  readonly code: number;
+  constructor(message: string, fix: string, code = 1) {
+    super(message);
+    this.fix = fix;
+    this.code = code;
+  }
+}
+
+/** A TCP port, from the text a person typed. */
+const parsePort = (text: string): number => {
+  const port = Number(text);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535)
+    throw new Refusal(
+      `'${text}' is not a port`,
+      "a whole number from 1 to 65535",
+      64,
+    );
+  return port;
+};
+
+/** a refusal says what to type instead, and exits as a usage error */
+test("parsePort > SaysWhatToDo", () => {
+  const Refused = nt.caught(() => (parsePort("http")), "Invoke<typeof parsePort, [text: \"http\"]>");
+  const expected = { message: "'http' is not a port", fix: "a whole number from 1 to 65535", code: 64 };
+  expect(Refused).toMatchObject(expected);
+});

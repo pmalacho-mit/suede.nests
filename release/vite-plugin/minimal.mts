@@ -5,6 +5,7 @@ import fs from "node:fs";
 import { cacheKey, read, write } from "./cache.mts";
 import { SUFFIX, collected, collectorLines, idFor } from "./collector.mts";
 import { fork } from "./fork.mts";
+import { statementOf, topLevelDeclarations } from "./emit/declarations.mts";
 import { answersTo } from "../test-names.mts";
 import {
   allNeeds,
@@ -31,9 +32,13 @@ type EmittedTest = Emitted["tests"][number];
 
 const configs = new Map<string, ts.ParsedCommandLine>();
 
-export function configFor(tsconfig: string, cwd = process.cwd()): ts.ParsedCommandLine {
+export function configFor(
+  tsconfig: string,
+  cwd = process.cwd(),
+): ts.ParsedCommandLine {
   const file = ts.findConfigFile(cwd, ts.sys.fileExists, tsconfig);
-  if (!file) throw new Error(`namespace-tests: cannot find ${tsconfig} from ${cwd}`);
+  if (!file)
+    throw new Error(`namespace-tests: cannot find ${tsconfig} from ${cwd}`);
   if (!configs.has(file))
     configs.set(
       file,
@@ -58,7 +63,10 @@ function programFor(abs: string, config: ts.ParsedCommandLine): ts.Program {
   return program;
 }
 
-function loaded(file: string, { input, tsconfig = "tsconfig.json" }: Options): EmitInput {
+function loaded(
+  file: string,
+  { input, tsconfig = "tsconfig.json" }: Options,
+): EmitInput {
   if (input) return input;
   const abs = path.resolve(file);
   const program = programFor(abs, configFor(tsconfig));
@@ -98,7 +106,9 @@ function* identifiersIn(node: ts.Node): Generator<ts.Identifier> {
 }
 
 const leadingTrivia = (statement: ts.Statement) =>
-  statement.getFullText().slice(0, statement.getStart() - statement.getFullStart());
+  statement
+    .getFullText()
+    .slice(0, statement.getStart() - statement.getFullStart());
 
 function trimmedImport(
   statement: ts.ImportDeclaration,
@@ -113,7 +123,8 @@ function trimmedImport(
   const named =
     bindings && ts.isNamedImports(bindings) ? bindings.elements : [];
   const wanted = named.filter((e) => used.has(e.name.text));
-  const byDefault = clause.name && used.has(clause.name.text) ? clause.name : null;
+  const byDefault =
+    clause.name && used.has(clause.name.text) ? clause.name : null;
   if (!byDefault && !wanted.length) return "";
   if (wanted.length === named.length && (!clause.name || byDefault))
     return statement.getFullText();
@@ -133,28 +144,15 @@ function aliasOf(
   let fallback: ts.TypeAliasDeclaration | undefined;
   for (const { segs, body } of namespaces(sf))
     for (const statement of body.statements) {
-      if (!ts.isTypeAliasDeclaration(statement) || statement.name.text !== test.alias)
+      if (
+        !ts.isTypeAliasDeclaration(statement) ||
+        statement.name.text !== test.alias
+      )
         continue;
       if (segs.join(" > ") === test.path.join(" > ")) return statement;
       fallback ??= statement;
     }
   return fallback;
-}
-
-function topLevelByName(sf: ts.SourceFile): Map<string, ts.Statement> {
-  const byName = new Map<string, ts.Statement>();
-  for (const statement of sf.statements) {
-    if (
-      (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) &&
-      statement.name
-    )
-      byName.set(statement.name.text, statement);
-    else if (ts.isVariableStatement(statement))
-      for (const declaration of statement.declarationList.declarations)
-        if (ts.isIdentifier(declaration.name))
-          byName.set(declaration.name.text, statement);
-  }
-  return byName;
 }
 
 function* importedNames(statement: ts.ImportDeclaration): Generator<string> {
@@ -166,7 +164,9 @@ function* importedNames(statement: ts.ImportDeclaration): Generator<string> {
     for (const element of bindings.elements) yield element.name.text;
 }
 
-function* declaredNames(block: ts.SourceFile | ts.ModuleBlock): Generator<string> {
+function* declaredNames(
+  block: ts.SourceFile | ts.ModuleBlock,
+): Generator<string> {
   for (const statement of block.statements) {
     if (ts.isVariableStatement(statement))
       for (const d of statement.declarationList.declarations)
@@ -179,13 +179,11 @@ function* declaredNames(block: ts.SourceFile | ts.ModuleBlock): Generator<string
 
 // only a name the file declares can reach a statement worth keeping
 const namesDeclaredIn = (sf: ts.SourceFile) =>
-  new Set([sf, ...[...namespaces(sf)].map(({ body }) => body)].flatMap((block) => [...declaredNames(block)]));
-
-const statementOf = (sf: ts.SourceFile, node: ts.Node): ts.Statement | undefined => {
-  let current: ts.Node = node;
-  while (current.parent && current.parent !== sf) current = current.parent;
-  return current.parent === sf ? (current as ts.Statement) : undefined;
-};
+  new Set(
+    [sf, ...[...namespaces(sf)].map(({ body }) => body)].flatMap((block) => [
+      ...declaredNames(block),
+    ]),
+  );
 
 function reachable(
   checker: ts.TypeChecker,
@@ -196,7 +194,12 @@ function reachable(
   const seen = new Set<ts.Node>();
   const queue: ts.Node[] = [from.type];
   const declared = namesDeclaredIn(sf);
-  const topLevel = topLevelByName(sf);
+  const topLevel = new Map(
+    [...topLevelDeclarations(sf)].map(([name, { statement }]) => [
+      name,
+      statement,
+    ]),
+  );
 
   const take = (statement: ts.Statement | undefined) => {
     if (!statement || keep.has(statement)) return;
@@ -206,8 +209,12 @@ function reachable(
 
   const follow = (identifier: ts.Identifier) => {
     let resolved = false;
-    for (const declaration of checker.getSymbolAtLocation(identifier)?.declarations ?? []) {
-      const statement = declaration.getSourceFile() === sf ? statementOf(sf, declaration) : undefined;
+    for (const declaration of checker.getSymbolAtLocation(identifier)
+      ?.declarations ?? []) {
+      const statement =
+        declaration.getSourceFile() === sf
+          ? statementOf(sf, declaration)
+          : undefined;
       if (!statement) continue;
       // tests live in a namespace: followed through, never kept
       if (ts.isModuleDeclaration(statement)) queue.push(declaration);
@@ -241,10 +248,7 @@ export function collectorFor(file: string, options: Options = {}): string {
 }
 
 declare namespace collectorFor {
-  type Counter = Invoke<
-    typeof collectorFor,
-    [file: "examples/counter.ts"]
-  >;
+  type Counter = Invoke<typeof collectorFor, [file: "examples/counter.ts"]>;
 
   /** your file, unchanged, is the whole of the top */
   export type KeepsSource = Expect<Counter, "includes", "class Counter">;
@@ -301,7 +305,8 @@ function namesUsed(tests: EmittedTest[], kept: ts.Statement[]) {
   const used = new Set<string>(tests.flatMap((t) => namesIn(t)));
   for (const statement of kept)
     if (!ts.isImportDeclaration(statement))
-      for (const identifier of identifiersIn(statement)) used.add(identifier.text);
+      for (const identifier of identifiersIn(statement))
+        used.add(identifier.text);
   return used;
 }
 
@@ -314,7 +319,8 @@ const withoutExports = (code: string) =>
     "",
   );
 
-const withoutShebang = (code: string) => code.trimStart().replace(/^#![^\n]*\n/, "");
+const withoutShebang = (code: string) =>
+  code.trimStart().replace(/^#![^\n]*\n/, "");
 
 function moduleText(kept: ts.Statement[], used: Set<string>) {
   const text = kept
@@ -328,12 +334,18 @@ function moduleText(kept: ts.Statement[], used: Set<string>) {
   return withoutShebang(withoutExports(text));
 }
 
-function printMinimal(file: string, testName: string, options: Options): string {
+function printMinimal(
+  file: string,
+  testName: string,
+  options: Options,
+): string {
   const input = loaded(file, options);
   const emitted = emittedFor(input, options.root);
   const tests = testsNamed(emitted.tests, testName, file);
   const reached = keptStatements(input, tests[0]);
-  const kept = input.source.statements.filter((statement) => reached.has(statement));
+  const kept = input.source.statements.filter((statement) =>
+    reached.has(statement),
+  );
   const text = [
     preambleFor(tests, input.source.fileName).join("\n"),
     "",

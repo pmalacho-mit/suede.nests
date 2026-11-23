@@ -25,6 +25,7 @@ const DESCRIPTION = [
   "  cli.mts <file> --collector       the module Vitest is handed for the file",
   "  cli.mts --clean [dir]            delete the cache, and the extracted tests",
   "                                   under dir (default: the working directory)",
+  "  cli.mts docs --help              what the tests say, as documentation",
 ].join("\n");
 
 /**
@@ -203,7 +204,12 @@ const cacheName = ({ mode, test }: Pick<Parsed, "mode" | "test">) =>
 const tryRetrieveFromCache = ({ file, mode, test, root }: Parsed) => {
   if (!file || !fs.existsSync(file)) return { key: null, hit: null };
   const source = fs.readFileSync(path.resolve(file), "utf8");
-  const key = cacheKey(source, cacheName({ mode, test }), root, path.resolve(file));
+  const key = cacheKey(
+    source,
+    cacheName({ mode, test }),
+    root,
+    path.resolve(file),
+  );
   return { key, hit: read(key) };
 };
 
@@ -245,7 +251,10 @@ async function print(parsed: Parsed) {
   }
 }
 
-if (cli.entry(import.meta.url)) {
+if (cli.entry(import.meta.url) && process.argv[2] === "docs") {
+  const { runDocs } = await import("./describe/cli.mts");
+  process.exitCode = await runDocs(process.argv.slice(3));
+} else if (cli.entry(import.meta.url)) {
   const parsed = parse(process.argv.slice(2));
   if (wantsCleaning(parsed)) cleanUp(parsed);
   else await print(parsed);

@@ -1,0 +1,13 @@
+import { test, expect, vi, onTestFinished } from "vitest";
+
+/** Which backend the stack runs on: the person's setting, or qemu. */
+const backend = () => process.env.NESTS_EXAMPLE_BACKEND ?? "qemu";
+
+/** unset, the default; and the test before did not leak into this one */
+test("backend > Unset", () => {
+  vi.stubEnv("NESTS_EXAMPLE_BACKEND", undefined);
+  onTestFinished(() => { vi.unstubAllEnvs(); });
+  const actual = backend();
+  const expected = "qemu";
+  expect(actual).toEqual(expected);
+});
