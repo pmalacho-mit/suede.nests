@@ -23,6 +23,7 @@ export { ts };
 import {
   createEmitContext,
   emitTests,
+  lowerTests,
   lowerAlias,
   lowerBody,
   lowerExpr,
@@ -33,6 +34,12 @@ import {
   render,
 } from "../vite-plugin/emit/index.mts";
 import { minimalFor } from "../vite-plugin/minimal.mts";
+import { describeTest, phrase } from "../describe/english.mts";
+import { lookupFor } from "../describe/lookup.mts";
+import { claimOf, fileDocs } from "../describe/model.mts";
+import { behaviorDiff } from "../describe/diff.mts";
+import { projectDocs } from "../describe/project.mts";
+import type { Finding } from "../describe/lint.mts";
 
 import type { EmitContext, EmitInput } from "../vite-plugin/emit/index.mts";
 
@@ -76,6 +83,17 @@ export const DSL_IMPORT = importFromDsl(
   "Mock",
   "Mocked",
   "SkipIfNotFound",
+  "Caught",
+  "Spy",
+  "Calls",
+  "FakeTimers",
+  "AdvanceTimers",
+  "StubEnv",
+  "TempDir",
+  "WriteFile",
+  "Exists",
+  "ListDir",
+  "Repeat",
 );
 
 /**
@@ -84,7 +102,8 @@ export const DSL_IMPORT = importFromDsl(
  * exported aliases are, not for what it is called.
  */
 
-const OPTIONS: ts.CompilerOptions = {
+/** The compiler options every test program is read with. */
+export const OPTIONS: ts.CompilerOptions = {
   target: ts.ScriptTarget.ES2022,
   // snippets are small and never touch the DOM; the default for ES2022 is
   // `lib.es2022.full.d.ts`, which drags in DOM, WebWorker and ScriptHost
@@ -240,3 +259,68 @@ export const minimalForFixture = (fixture: string, testName: string): string =>
 /** The whole generated module: preamble, then every test. */
 export const printModule = (code: string, root?: string): string =>
   render(emitTests(inputFor(code), root)).code;
+
+// ── words ──────────────────────────────────────────────────────────────────
+
+/** `type Subject = …`, as the noun phrase the docs say it with. */
+export const describeExpression = (code: string, alias = "Subject"): string => {
+  const cx = contextFor(code);
+  return phrase(lowerExpr(cx, typeIn(code, alias)), {
+    lookup: lookupFor(cx.checker, cx.source),
+  });
+};
+
+const described = (code: string, alias: string) => {
+  const cx = contextFor(code);
+  const lookup = lookupFor(cx.checker, cx.source);
+  return lowerAlias(cx, aliasIn(code, alias), pathOf(code, alias)).map((t) =>
+    describeTest(t, lookup),
+  );
+};
+
+/** `export type <alias>`, in words: a sentence per test it makes. */
+export const describeAlias = (code: string, alias: string): string[] =>
+  described(code, alias).map((d) => d.sentence);
+
+/** What the aliases `<alias>` names stand for, in words. */
+export const describeWhere = (code: string, alias: string): string[] =>
+  described(code, alias).flatMap((d) => d.where);
+
+/** Whether `export type <alias>` shows what is refused or what is answered. */
+export const claimKind = (code: string, alias: string) => {
+  const cx = contextFor(code);
+  return claimOf(
+    lowerAlias(cx, aliasIn(code, alias), pathOf(code, alias))[0]!,
+    "snippet.ts",
+    lookupFor(cx.checker, cx.source),
+  ).kind;
+};
+
+/** The docs model of a snippet. */
+export const docsOf = (code: string) => {
+  const input = inputFor(code);
+  return fileDocs(input, lowerTests(input).tests, "snippet.ts");
+};
+
+/** A set of top-level names, as `subjectName` is handed them. */
+export const valueNames = (names: string[]) =>
+  new Map(names.map((n) => [n, true]));
+
+/** The claims that differ between two versions of a snippet. */
+export const diffOf = (before: string, after: string) =>
+  behaviorDiff([docsOf(before)], [docsOf(after)]);
+
+/** A snippet read as a whole project, its references and links included. */
+export const projectOf = (code: string) => {
+  const { program, source } = inputFor(code);
+  return projectDocs({
+    root: path.dirname(source.fileName),
+    files: [source.fileName],
+    program,
+    // the program holds every snippet; only this one is the project
+    scope: "files",
+  });
+};
+
+/** The rule each finding broke, in order. */
+export const ruleNames = (findings: Finding[]) => findings.map((f) => f.rule);

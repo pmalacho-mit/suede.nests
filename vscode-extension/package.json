@@ -106,7 +106,13 @@
           "description": "Command that prints one test as a standalone file. Empty means find the library in the workspace."
         }
       }
-    }
+    },
+    "typescriptServerPlugins": [
+      {
+        "name": "namespace-tests-ts-plugin",
+        "enableForWorkspaceTypeScriptVersions": true
+      }
+    ]
   },
   "scripts": {
     "build": "node build.mjs",

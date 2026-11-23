@@ -19,6 +19,7 @@ import { testRunner, type TestRunner } from "./runner.js";
 import { childrenOf, everyItem, testTree, type TestTree } from "./tree.js";
 import { explainedWarnings } from "./explained.js";
 import { printerWarnings } from "./warnings.js";
+import { placeTypeScriptPlugin } from "./ts-plugin.js";
 
 type Parts = {
   output: vscode.OutputChannel;
@@ -102,9 +103,13 @@ const runProfile = (controller: vscode.TestController, runner: TestRunner) =>
 const autoRunEnabled = () =>
   vscode.workspace.getConfiguration(ID).get<boolean>("autoRun", true);
 
-const isFile = (document: vscode.TextDocument) => document.uri.scheme === "file";
+const isFile = (document: vscode.TextDocument) =>
+  document.uri.scheme === "file";
 
-function followDocuments({ tree, runner }: Parts, lensesChanged: vscode.EventEmitter<void>) {
+function followDocuments(
+  { tree, runner }: Parts,
+  lensesChanged: vscode.EventEmitter<void>,
+) {
   const autoRun = (document: vscode.TextDocument) => {
     if (!isFile(document)) return;
     const tests = tree.load(document.uri, document.getText());
@@ -136,24 +141,58 @@ function followDocuments({ tree, runner }: Parts, lensesChanged: vscode.EventEmi
   ];
 }
 
+// a function's tests in its hover and after calls to it: tsserver loads the plugin only once it is in place
+function typeScriptPlugin(
+  context: vscode.ExtensionContext,
+  output: vscode.OutputChannel,
+) {
+  try {
+    if (placeTypeScriptPlugin(context.extensionPath))
+      void vscode.commands.executeCommand("typescript.restartTsServer");
+  } catch (error) {
+    output.appendLine(
+      `the TypeScript plugin could not be put in place: ${String(error)}`,
+    );
+  }
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   cacheCompiledModulesIn(path.join(context.globalStorageUri.fsPath, "node"));
   const controller = vscode.tests.createTestController(ID, "Namespace Tests");
   const warnings = vscode.languages.createDiagnosticCollection(ID);
-  const missingPages = vscode.languages.createDiagnosticCollection(`${ID}.display`);
+  const missingPages = vscode.languages.createDiagnosticCollection(
+    `${ID}.display`,
+  );
   const output = vscode.window.createOutputChannel("Namespace Tests");
+  typeScriptPlugin(context, output);
   const lensesChanged = new vscode.EventEmitter<void>();
   const [views, showAgainst] = generatedViews();
-  context.subscriptions.push(controller, warnings, missingPages, output, lensesChanged, views);
+  context.subscriptions.push(
+    controller,
+    warnings,
+    missingPages,
+    output,
+    lensesChanged,
+    views,
+  );
 
   const tree = testTree(controller, output, missingPages);
   const panels = displayPanels(context.extensionUri);
-  const runner = testRunner({ controller, output, tree, panels, lensesChanged });
+  const runner = testRunner({
+    controller,
+    output,
+    tree,
+    panels,
+    lensesChanged,
+  });
   const parts: Parts = { output, tree, runner, panels, showAgainst };
 
   controller.resolveHandler = async (item) => {
     if (item?.uri) return void tree.load(item.uri);
-    for (const uri of await vscode.workspace.findFiles("**/*.{ts,tsx,mts,cts}", "**/node_modules/**"))
+    for (const uri of await vscode.workspace.findFiles(
+      "**/*.{ts,tsx,mts,cts}",
+      "**/node_modules/**",
+    ))
       tree.load(uri);
   };
 

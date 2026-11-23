@@ -9,7 +9,10 @@ and 5, expect 9 — so the namespace under a function reads as a list of what it
 does:
 
 ```ts
-import type { Expect, Invoke } from "./<path-to-library>/dsl.import.meta.vitest.ts";
+import type {
+  Expect,
+  Invoke,
+} from "./<path-to-library>/dsl.import.meta.vitest.ts";
 
 export const add = (a: number, b: number) => a + b;
 
@@ -61,7 +64,7 @@ and you do not need the `define: { "import.meta.vitest": "undefined" }` that
 in-source testing usually asks for, because nothing that reads
 `import.meta.vitest` ever reaches a build.
 
-**If you keep a separate `vitest.config.ts`,** Vitest reads it *instead of*
+**If you keep a separate `vitest.config.ts`,** Vitest reads it _instead of_
 `vite.config.ts`, not as well as it. Merge the two, so your tests keep the app's
 plugins and aliases:
 
@@ -97,15 +100,15 @@ Run Vitest from the project root. Discovery, `exclude` and
 
 The options, all optional:
 
-| Option                  | What it does                                                                                                        |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `exclude`               | Globs discovery skips, relative to the project root. `node_modules` and dot-directories are always skipped.         |
-| `include`               | Extra globs to collect tests from, as Vitest's `include`.                                                           |
-| `root`                  | Only read namespaces with this name ([what counts as a test](#what-counts-as-a-test)).                              |
-| `noIsolateModuleImport` | Modules every test shares instead of getting its own copy ([how a test is run](#how-a-test-is-run)).                |
+| Option                  | What it does                                                                                                           |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `exclude`               | Globs discovery skips, relative to the project root. `node_modules` and dot-directories are always skipped.            |
+| `include`               | Extra globs to collect tests from, as Vitest's `include`.                                                              |
+| `root`                  | Only read namespaces with this name ([what counts as a test](#what-counts-as-a-test)).                                 |
+| `noIsolateModuleImport` | Modules every test shares instead of getting its own copy ([how a test is run](#how-a-test-is-run)).                   |
 | `extracted`             | The glob for extracted tests, added to Vitest's `include`; `false` leaves them out ([extracting](#extracting-a-test)). |
-| `tsconfig`              | The tsconfig file name, found upward from the working directory. Default `tsconfig.json`.                          |
-| `scan`                  | Discover test files by scanning the working directory. Default `true`.                                              |
+| `tsconfig`              | The tsconfig file name, found upward from the working directory. Default `tsconfig.json`.                              |
+| `scan`                  | Discover test files by scanning the working directory. Default `true`.                                                 |
 
 ## Importing the DSL (_the path matters_)
 
@@ -143,17 +146,22 @@ Two consequences worth knowing:
 Every building block is documented, with examples, in the
 [API reference](./docs/API.md):
 
-| To…                                             | Write                                                                                                                                |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| call a function, a constructor, a method        | [`Invoke`](./docs/API.md#invoke), [`Construct`](./docs/API.md#construct), [`Call`](./docs/API.md#call)                             |
-| assert                                          | [`Expect`](./docs/API.md#expect), [`Throws`](./docs/API.md#throws)                                                                  |
-| run effects first                               | [`Given`](./docs/API.md#given), [`ExpectGiven`](./docs/API.md#expectgiven)                                                          |
-| check many cases                                | [`Table`](./docs/API.md#table)                                                                                                      |
-| build inputs                                    | [`Fixture`](./docs/API.md#fixture), [`Widen`](./docs/API.md#widen), [`FromFile`](./docs/API.md#fromfile), [`Env`](./docs/API.md#env) |
-| compare against a stored value                  | [`Snapshot`](./docs/API.md#snapshot)                                                                                                |
-| replace a module                                | [`Mock`](./docs/API.md#mock), [`Mocked`](./docs/API.md#mocked)                                                                      |
-| skip, focus, plan, configure                    | [`Skip`](./docs/API.md#skip), [`SkipIfNotFound`](./docs/API.md#skipifnotfound), [`Only`](./docs/API.md#only), [`Todo`](./docs/API.md#todo), [`Configure`](./docs/API.md#configure) |
-| pass a config without an expected value         | [`Nothing`](./docs/API.md#nothing)                                                                                                  |
+| To…                                       | Write                                                                                                                                                                              |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| call a function, a constructor, a method  | [`Invoke`](./docs/API.md#invoke), [`Construct`](./docs/API.md#construct), [`Call`](./docs/API.md#call)                                                                             |
+| assert                                    | [`Expect`](./docs/API.md#expect), [`Throws`](./docs/API.md#throws)                                                                                                                 |
+| run effects first                         | [`Given`](./docs/API.md#given), [`ExpectGiven`](./docs/API.md#expectgiven)                                                                                                         |
+| check many cases                          | [`Table`](./docs/API.md#table)                                                                                                                                                     |
+| build inputs                              | [`Fixture`](./docs/API.md#fixture), [`Widen`](./docs/API.md#widen), [`FromFile`](./docs/API.md#fromfile), [`Env`](./docs/API.md#env)                                               |
+| compare against a stored value            | [`Snapshot`](./docs/API.md#snapshot)                                                                                                                                               |
+| replace a module                          | [`Mock`](./docs/API.md#mock), [`Mocked`](./docs/API.md#mocked)                                                                                                                     |
+| assert on what was thrown, field by field | [`Caught`](./docs/API.md#caught), or [`Throws`](./docs/API.md#throws) with the error's own fields                                                                                  |
+| record a callback                         | [`Spy`](./docs/API.md#spy), [`Calls`](./docs/API.md#calls)                                                                                                                         |
+| control time, or the environment          | [`FakeTimers`](./docs/API.md#faketimers), [`AdvanceTimers`](./docs/API.md#advancetimers), [`StubEnv`](./docs/API.md#stubenv)                                                       |
+| work with files the code reads and writes | [`TempDir`](./docs/API.md#tempdir), [`WriteFile`](./docs/API.md#writefile), [`Exists`](./docs/API.md#exists), [`ListDir`](./docs/API.md#listdir)                                   |
+| build a long or shaped string             | [`Repeat`](./docs/API.md#repeat), and template literals whose holes are values                                                                                                     |
+| skip, focus, plan, configure              | [`Skip`](./docs/API.md#skip), [`SkipIfNotFound`](./docs/API.md#skipifnotfound), [`Only`](./docs/API.md#only), [`Todo`](./docs/API.md#todo), [`Configure`](./docs/API.md#configure) |
+| pass a config without an expected value   | [`Nothing`](./docs/API.md#nothing)                                                                                                                                                 |
 
 **Name the arguments.** Every argument list — to `Invoke`, `Construct`, `Call`,
 and a `Table` row's `args` — is a tuple, and a named one says what each value is:
@@ -182,7 +190,10 @@ it covers, and the test says where it was written:
 
 ```ts
 declare namespace parseDate {
-  export type Iso = Expect<Invoke<typeof parseDate, [input: "2020-01-01"]>, "truthy">;
+  export type Iso = Expect<
+    Invoke<typeof parseDate, [input: "2020-01-01"]>,
+    "truthy"
+  >;
 }
 // parseDate > Iso
 ```
@@ -265,18 +276,86 @@ The DSL adds only the type: the expected list is checked against the real record
 type, so a misspelled key or a wrongly typed value is a compile error, and a
 tuple actual is checked position by position.
 
-## Beyond literals: harness modules
+## Beyond literals
 
-A test can only say what a type can: literals, calls, `new`, method calls. For
-anything else — a callback, a spy, fake timers, async orchestration — write an
-ordinary function in a module of its own, and import it into the test **as a
-type**:
+A test can say what a type can: literals, calls, `new`, method calls. The DSL
+also has a value or an effect for each of the things tests of real code reach
+for next, so that those tests stay tests you can read whole, and the docs can
+say in words ([Tests as documentation](#tests-as-documentation)):
+
+```ts
+declare namespace debounce {
+  type Run = Spy<() => void>; // a vi.fn()
+  type Debounced = Invoke<typeof debounce, [run: Run, ms: 100]>;
+
+  /** a burst of calls runs once, after the quiet period */
+  export type OnceAfterABurst = Given<
+    [FakeTimers, Invoke<Debounced>, Invoke<Debounced>, AdvanceTimers<100>],
+    Expect<Calls<Run>["length"], "=", 1>
+  >;
+}
+
+declare namespace parsePort {
+  type Refused = Caught<Invoke<typeof parsePort, [text: "http"]>, Refusal>;
+
+  /** a refusal says what to type instead, and exits as a usage error */
+  export type SaysWhatToDo = Expect<
+    Refused,
+    "matches",
+    { fix: "a whole number from 1 to 65535"; code: 64 }
+  >;
+}
+
+declare namespace copy {
+  type Dir = TempDir<{ "in/a.txt": "hello" }>; // removed when the test ends
+
+  export type Copies = Given<
+    Invoke<typeof copy, [from: `${Dir}/in/a.txt`, to: `${Dir}/out.txt`]>,
+    Expect<FromFile<`${Dir}/out.txt`>, "=", "hello">
+  >;
+}
+```
+
+| Write                                   | It is                                                                                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `Caught<Expr, E>`                       | the error `Expr` throws (or rejects with), typed as `E`; the test fails if nothing is thrown           |
+| `Spy<F, Impl?>`, `Calls<S>`             | a `vi.fn()` (running `Impl`), and the arguments of each call it got                                    |
+| `FakeTimers<Now?>`, `AdvanceTimers<Ms>` | fake timers for the test, and fake time moved on, running what falls due                               |
+| `StubEnv<Name, Value>`                  | an environment variable set, or unset as `undefined`, for the test                                     |
+| `TempDir<Files>`                        | a fresh directory holding `Files`, its path, removed when the test ends                                |
+| `WriteFile<Path, Text>`                 | a file written, its directories made, where the effect stands                                          |
+| `Exists<Path>`, `ListDir<Path>`         | whether something is at a path, and a directory's names, sorted                                        |
+| `Repeat<Text, Count>`                   | `Text` `Count` times; with a template literal, a string of a given shape: `` `b${Repeat<"x", 199>}` `` |
+
+`FakeTimers` and `StubEnv` apply to the whole test, as `Mock` does: whatever
+their place among a `Given`'s effects, they come first, and each is undone when
+the test ends. `AdvanceTimers` and `WriteFile` run where they are written. Like
+any alias, a `Spy`, a `TempDir` or a `Caught` named once is one value in a test:
+the code and the expectation hold the same spy, the same directory, the same
+error.
+
+A `Throws` matcher's fields beyond `instanceOf`, `name`, `message` and
+`matches` are the error's own, compared as `"matches"` compares:
+`Throws<Invoke<typeof parsePort, [text: "0"]>, { instanceOf: Refusal; code: 64 }>`.
+For a typed check of those fields, assert on `Caught` instead.
+
+Each prints as the few lines of Vitest it stands for, which "What Vitest sees"
+and an extracted test show: `vi.fn()`, `vi.useFakeTimers()` with an
+`onTestFinished` that undoes it, `nt.tempDir({ … })` from the library's small
+runtime ([vite-plugin/runtime.mts](./vite-plugin/runtime.mts)). See
+[examples/beyond-literals.ts](../examples/beyond-literals.ts) for each in use.
+
+### Harness modules, for the rest
+
+For anything the DSL cannot say, write an ordinary function in a module of its
+own, and import it into the test **as a type**:
 
 ```ts
 // lib/harness.ts
 import { vi } from "vitest";
 import { each } from "../harnessed.ts";
 
+/** What the callback is handed, given `xs`. */
 export const callsOf = (xs: number[]) => {
   const visit = vi.fn();
   each(xs, visit);
@@ -289,13 +368,99 @@ export const callsOf = (xs: number[]) => {
 import type { callsOf } from "./lib/harness.ts";
 
 declare namespace each {
-  export type VisitsInOrder = Expect<Invoke<typeof callsOf, [xs: [1, 2, 3]]>, "=", [[1], [2], [3]]>;
+  export type VisitsInOrder = Expect<
+    Invoke<typeof callsOf, [xs: [1, 2, 3]]>,
+    "=",
+    [[1], [2], [3]]
+  >;
 }
 ```
 
 The printed test imports the harness as a value; your module only ever imports
 it as a type, so the harness — and `vitest` with it — never reaches your build.
 A harness can clean up after itself with Vitest's `onTestFinished`.
+
+**Give a harness function a one-line JSDoc that names its parameters in
+backticks.** The docs say a call to it in its own words: with the JSDoc above,
+`Invoke<typeof callsOf, [xs: [1, 2, 3]]>` reads as "what the callback is
+handed, given `[1, 2, 3]`". That works when every name in backticks in the
+first clause is one of its parameters, and every parameter is named.
+
+## Tests as documentation
+
+A test already has a claim, the `/** … */` a person wrote, and evidence, the
+type the printer runs. The printer can say that evidence in words, so the docs
+can put the two side by side, and a reader who does not read the DSL still
+sees exactly what was checked:
+
+```
+parsePort > SaysWhatToDo: a refusal says what to type instead, and exits as a usage error
+  `Refused` has fix `"a whole number from 1 to 65535"` and code `64`.
+  where `Refused` is the error `parsePort` given text `"http"` throws
+```
+
+The words are the evidence, never the claim. They say what the test checks; the
+claim says why that matters, and only a person can write it.
+
+**A row says what it shows.** A `/** … */` just before one row of a `Table`
+describes that row: the printed test carries it, and the docs show it beside
+the table's own words. A row without one is described by its table.
+
+**Tags.** JSDoc tags on a test (or on its own line in a row's comment, after
+the text) are kept with it. None changes what runs; the docs and `docs lint`
+read these:
+
+| Tag                                    | Says                                                                                  |
+| -------------------------------------- | ------------------------------------------------------------------------------------- |
+| `@control`                             | this case shows the tests would notice: it passes where the refusals beside it do not |
+| `@standsIn <module>`                   | on a harness function or a test: what it stands in for                                |
+| `@realIn <test or tier>`               | where the real thing (not the stand-in) is shown                                      |
+| `@principle <id>`, `@requirement <id>` | which principle or requirement the claim is evidence for                              |
+| `@incident <id>`                       | the incident the claim was written to pin                                             |
+
+**Citing claims.** A namespace merges with the value it is named after, so a
+function's own JSDoc can link to the test that proves each sentence:
+`{@link parsePort.SaysWhatToDo}`. The link is checked by the compiler's own
+resolution: rename the test and the editor's rename follows; remove it and
+`docs lint` says so.
+
+### The docs model, and what is made from it
+
+`docs model` reads every file with tests, found as the plugin finds them, into
+one model. For each file: the functions its tests are named after (signature,
+JSDoc, tags), and each test as documentation: its words (the alias's, and a
+row's own), its evidence in words, its table cells named as the arguments are,
+whether it shows what is answered or what is refused, and what it leaned on
+(harness functions, mocks, setups, the DSL values above). Then what only the
+whole program knows: who calls each function, from where, and whether from
+code, a test or a harness; which harness modules the tests speak through; which
+modules they replace; and how the last run went, from `.derived/results.json`.
+
+`--exclude` takes globs, as the plugin's `exclude` does. A project that vendors
+this library leaves the library's own tests out; `--self` reads them too.
+
+```
+node <path-to-library>/cli.mts docs model [--out file]       # the model, as JSON
+node <path-to-library>/cli.mts docs cards [file…] [--out dir] # per file: what each function answers and refuses, who calls it
+node <path-to-library>/cli.mts docs diff --base main          # what a change does to the claims, since main
+node <path-to-library>/cli.mts docs lint [file…]              # where the words would mislead a reader
+```
+
+**`docs diff`** is for reviewing a change, an agent's above all: the claims it
+adds, removes and changes, each in its author's words and its evidence before
+and after, read from the tests rather than the code. Both sides are read by
+the same printer, so only the change itself shows. A removed claim, a changed
+one and one newly skipped are each a guarantee that is gone or different, and
+`--check` exits 1 when there is any, for a CI step or a review that a person
+signs off.
+
+**`docs lint`** finds: tests with no words of their own (`missing-claim`), words
+that only say the assertion again (`restates`), `{@link}`s to tests that do not
+exist (`unresolved-link`), a description that cites some claims and not others
+(`uncited`), a function whose every claim is a refusal and none a
+`@control` (`no-control`), claims that open with a refusal (`refusal-first`),
+and functions called from ten places or more with no claims (`unclaimed-hot`).
+`--check` exits 1 on any finding.
 
 ## Mocking a module
 
@@ -315,7 +480,10 @@ declare namespace inEuros {
 
   /** every export a vi.fn(), and one of them told what to return */
   export type Stubbed = Given<
-    [Mock<"./lib/rates.ts">, Call<Mocked<typeof exchangeRate>, "mockReturnValue", [value: 3]>],
+    [
+      Mock<"./lib/rates.ts">,
+      Call<Mocked<typeof exchangeRate>, "mockReturnValue", [value: 3]>,
+    ],
     Expect<Invoke<typeof inEuros, [dollars: 10]>, "=", 30>
   >;
 }
@@ -338,7 +506,14 @@ test where its file is, and skips it where it is not:
 ```ts
 export type Seeded = SkipIfNotFound<
   "./fixtures/users.json",
-  Expect<Invoke<typeof countUsers, [users: FromFile<"./fixtures/users.json", "json", unknown[]>]>, ">", 0>
+  Expect<
+    Invoke<
+      typeof countUsers,
+      [users: FromFile<"./fixtures/users.json", "json", unknown[]>]
+    >,
+    ">",
+    0
+  >
 >;
 ```
 
@@ -351,7 +526,10 @@ wall of numbers — by naming the page as `Expect`'s fourth argument:
 
 ```ts
 export type Visual = Expect<
-  Invoke<typeof histogram, [xs: [1, 1, 1, 2, 3, 5, 8, 13], buckets: 4, min: 0, max: 16]>,
+  Invoke<
+    typeof histogram,
+    [xs: [1, 1, 1, 2, 3, 5, 8, 13], buckets: 4, min: 0, max: 16]
+  >,
   "=",
   [5, 1, 1, 1],
   "./fixtures/display-histogram.html"
@@ -459,7 +637,7 @@ library's own folder**.
 The name is the point: nothing in it is authored. Every file is derived from
 your source, by this library, for this library — so none of it is yours to read
 or edit, and deleting any of it costs nothing but the time to write it again.
-The two JSON files are how the editor learns what happened; `cache/` is what
+The two JSON files are how the editor (and the docs) learn what happened; `cache/` is what
 makes it fast. Printed tests are keyed by the source they came from _and_ by the
 version of the printer, so a changed printer never hands back stale work; Node's
 cache holds the compiled form of the modules a command loads, which is what
@@ -508,8 +686,8 @@ stub is inert.
 
 Run from the library's folder:
 
-| Script                        | What it does                                                           |
-| ----------------------------- | ---------------------------------------------------------------------- |
-| `npm run install-extension`   | builds, packages and installs the [editor extension](./vscode-extension/README.md) into VS Code (or VSCodium, Cursor) |
-| `npm run build-extension`     | only builds it                                                         |
-| `npm run clean-cache`         | deletes the printer's cache, as `--clean-cache` does                   |
+| Script                      | What it does                                                                                                          |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `npm run install-extension` | builds, packages and installs the [editor extension](./vscode-extension/README.md) into VS Code (or VSCodium, Cursor) |
+| `npm run build-extension`   | only builds it                                                                                                        |
+| `npm run clean-cache`       | deletes the printer's cache, as `--clean-cache` does                                                                  |
