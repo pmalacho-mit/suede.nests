@@ -807,8 +807,8 @@ export type Mocked<F extends Internal.AnyFn> = MockedFunction<F>;
 //
 // Each of these is a value or an effect with one meaning, printed as the few
 // lines of Vitest it stands for. A test that uses them stays a test you can
-// read whole, and one the docs can say in words; a harness function is still
-// there for whatever these cannot say.
+// read whole, and one the docs can write in shorthand; a harness function is
+// still there for whatever these cannot say.
 
 /**
  * The error an expression throws, or the reason the promise it returns

@@ -78,7 +78,7 @@ test("a function's claims are on its own page, split into what it answers and wh
   expect(claims).toContain('| `"8g"` | `8192` |');
   expect(claims).toContain("**What it refuses**");
   expect(claims).toContain(
-    '**Junk**: anything else is not memory\n  - `parseMemory` given value `"lots"` is `null`.',
+    '**Junk**: anything else is not memory\n  - `parseMemory("lots") → null`',
   );
   expect(claimsOf("double")).toContain("**Two**: two is four");
 });

@@ -6,6 +6,7 @@
 // approve: each is a guarantee the code no longer makes, or makes differently.
 // They are `needsReview`, and `cli.mts docs diff --check` fails on any.
 import { claimWords, subjectId } from "./model.mts";
+import { codeBlock, codeSpan } from "./shorthand.mts";
 
 import type { ClaimDoc, FileDocs } from "./model.mts";
 import type * as harness from "../_internal/harness.mts";
@@ -37,8 +38,7 @@ const keyed = (files: FileDocs[]) =>
     ),
   );
 
-const words = (c: ClaimDoc) =>
-  JSON.stringify([claimWords(c), c.english, c.where]);
+const words = (c: ClaimDoc) => JSON.stringify([claimWords(c), c.shorthand]);
 
 const runs = (c: ClaimDoc) => c.mode === "test" || c.mode === "test.only";
 
@@ -88,6 +88,16 @@ export function behaviorDiff(
 const said = (c: ClaimDoc) =>
   claimWords(c)?.replace(/\s+/g, " ") ?? "_(no words of its own)_";
 
+// the evidence under a claim, after what it is (`was: `): a line as code, several as a block
+const evidence = (c: ClaimDoc, lead = "") => {
+  const lines = c.shorthand;
+  if (!lines.length) return `\n  - ${lead}_(not written yet)_`;
+  if (lines.length === 1) return `\n  - ${lead}${codeSpan(lines[0]!)}`;
+  return lead
+    ? `\n  - ${lead.trimEnd()}\n${codeBlock(lines, "    ").join("\n")}`
+    : `\n${codeBlock(lines, "  ").join("\n")}`;
+};
+
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** A behavior diff, as Markdown a reviewer reads before the code. */
@@ -106,14 +116,14 @@ export function diffMarkdown(d: BehaviorDiff): string {
       "Removed",
       d.removed.map(
         ({ file, claim }) =>
-          `- \`${claim.name}\` (${file}): ${said(claim)}\n  - was: ${claim.english}`,
+          `- \`${claim.name}\` (${file}): ${said(claim)}${evidence(claim, "was: ")}`,
       ),
     ),
     ...block(
       "Changed",
       d.changed.map(
         ({ file, before, after }) =>
-          `- \`${after.name}\` (${file}): ${said(after)}\n  - was: ${before.english}\n  - now: ${after.english}`,
+          `- \`${after.name}\` (${file}): ${said(after)}${evidence(before, "was: ")}${evidence(after, "now: ")}`,
       ),
     ),
     ...block(
@@ -126,7 +136,7 @@ export function diffMarkdown(d: BehaviorDiff): string {
       "Added",
       d.added.map(
         ({ file, claim }) =>
-          `- \`${claim.name}\` (${file}): ${said(claim)}\n  - ${claim.english}`,
+          `- \`${claim.name}\` (${file}): ${said(claim)}${evidence(claim)}`,
       ),
     ),
     ...block(
@@ -134,7 +144,7 @@ export function diffMarkdown(d: BehaviorDiff): string {
       d.reworded.map(({ before, after }) =>
         said(before) !== said(after)
           ? `- \`${after.name}\`: "${said(before)}" → "${said(after)}"`
-          : `- \`${after.name}\`: ${said(after)}\n  - was: ${before.english}\n  - now: ${after.english}`,
+          : `- \`${after.name}\`: ${said(after)}${evidence(before, "was: ")}${evidence(after, "now: ")}`,
       ),
     ),
     ...block(
@@ -180,7 +190,7 @@ declare namespace behaviorDiff {
         {
           after: {
             name: "isSlug > Dot";
-            english: '`isSlug` given v `"a.b"` is `true`.';
+            shorthand: ['isSlug("a.b") → true'];
           };
         },
       ];

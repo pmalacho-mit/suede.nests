@@ -34,7 +34,7 @@ import {
   render,
 } from "../vite-plugin/emit/index.mts";
 import { minimalFor } from "../vite-plugin/minimal.mts";
-import { describeTest, phrase } from "../describe/english.mts";
+import { expression, shorthand } from "../describe/shorthand.mts";
 import { lookupFor } from "../describe/lookup.mts";
 import { claimOf, fileDocs } from "../describe/model.mts";
 import { behaviorDiff } from "../describe/diff.mts";
@@ -260,31 +260,25 @@ export const minimalForFixture = (fixture: string, testName: string): string =>
 export const printModule = (code: string, root?: string): string =>
   render(emitTests(inputFor(code), root)).code;
 
-// ── words ──────────────────────────────────────────────────────────────────
+// ── shorthand ──────────────────────────────────────────────────────────────
 
-/** `type Subject = …`, as the noun phrase the docs say it with. */
-export const describeExpression = (code: string, alias = "Subject"): string => {
+/** `type Subject = …`, as the code the docs write it with. */
+export const shorthandExpression = (code: string, alias = "Subject"): string => {
   const cx = contextFor(code);
-  return phrase(lowerExpr(cx, typeIn(code, alias)), {
+  return expression(lowerExpr(cx, typeIn(code, alias)), {
     lookup: lookupFor(cx.checker, cx.source),
+    notes: [],
   });
 };
 
-const described = (code: string, alias: string) => {
+/** `export type <alias>`, in shorthand: its lines, for each test it makes. */
+export const shorthandOf = (code: string, alias: string): string[][] => {
   const cx = contextFor(code);
   const lookup = lookupFor(cx.checker, cx.source);
   return lowerAlias(cx, aliasIn(code, alias), pathOf(code, alias)).map((t) =>
-    describeTest(t, lookup),
+    shorthand(t, lookup),
   );
 };
-
-/** `export type <alias>`, in words: a sentence per test it makes. */
-export const describeAlias = (code: string, alias: string): string[] =>
-  described(code, alias).map((d) => d.sentence);
-
-/** What the aliases `<alias>` names stand for, in words. */
-export const describeWhere = (code: string, alias: string): string[] =>
-  described(code, alias).flatMap((d) => d.where);
 
 /** Whether `export type <alias>` shows what is refused or what is answered. */
 export const claimKind = (code: string, alias: string) => {

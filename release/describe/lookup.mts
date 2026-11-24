@@ -4,7 +4,7 @@ import ts from "@typescript/typescript6";
 
 import { docTextOf } from "../vite-plugin/emit/declarations.mts";
 
-import type { Callee, Lookup } from "./english.mts";
+import type { Callee, Lookup } from "./shorthand.mts";
 
 /** A symbol, through any imports, to what it was declared as. */
 export const resolved = (
