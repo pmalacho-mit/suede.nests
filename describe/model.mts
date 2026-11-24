@@ -13,12 +13,12 @@ import {
   tagsOf,
   topLevelDeclarations,
 } from "../vite-plugin/emit/declarations.mts";
-import { describeTest } from "./english.mts";
+import { shorthand } from "./shorthand.mts";
 import { lookupFor } from "./lookup.mts";
 
 import type { EmitInput } from "../vite-plugin/emit/index.mts";
 import type { Binding, Expr, Tag, TestCase } from "../vite-plugin/emit/ir.mts";
-import type { Lookup } from "./english.mts";
+import type { Lookup } from "./shorthand.mts";
 import type { Expect, Invoke, Table } from "../dsl.import.meta.vitest.ts";
 import type * as harness from "../_internal/harness.mts";
 
@@ -49,9 +49,8 @@ export type ClaimDoc = {
   kind: "refuses" | "answers";
   /** The evidence: the test Vitest runs, without the words above it. */
   code: string;
-  /** The evidence in words: what the printed test does and checks. */
-  english: string;
-  where: string[];
+  /** The evidence in shorthand: what the printed test sets up, does and checks, a line of code each. */
+  shorthand: string[];
   /** A table row's call, cell by cell, for a docs table. */
   cells: {
     args: [label: string | null, value: string][];
@@ -222,7 +221,6 @@ function harnessOf(t: TestCase): ClaimDoc["uses"]["harness"] {
 
 /** One test, as documentation. */
 export function claimOf(t: TestCase, file: string, lookup: Lookup): ClaimDoc {
-  const { sentence, where } = describeTest(t, lookup);
   return {
     id: claimId(file, t.name),
     name: t.name,
@@ -236,8 +234,7 @@ export function claimOf(t: TestCase, file: string, lookup: Lookup): ClaimDoc {
     mode: t.mode,
     kind: isRefusal(t) ? "refuses" : "answers",
     code: printTest({ ...t, doc: null, rowDoc: null }).code,
-    english: sentence,
-    where,
+    shorthand: shorthand(t, lookup),
     cells: cellsOf(t),
     uses: {
       harness: harnessOf(t),
@@ -403,7 +400,7 @@ declare namespace fileDocs {
           rowDoc: "anything else is not memory";
           kind: "refuses";
           tags: [{ name: "control"; text: "" }];
-          english: '`parseMemory` given value `"lots"` is `null`.';
+          shorthand: ['parseMemory("lots") → null'];
           cells: {
             args: [["value", '"lots"']];
             condition: "=";

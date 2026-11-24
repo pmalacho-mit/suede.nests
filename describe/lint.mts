@@ -40,13 +40,13 @@ const words = (text: string) =>
 
 /**
  * How much of a claim its evidence already says: the share of the claim's
- * words that are in the sentence the test reads as. A claim that only says the
+ * words that are in the test's shorthand. A claim that only says the
  * assertion again tells the reader nothing the test did not.
  */
-export const restatement = (claim: string, english: string) => {
+export const restatement = (claim: string, shorthand: string[]) => {
   const said = words(claim);
   if (said.size < 2) return 0;
-  const evidence = words(english);
+  const evidence = words(shorthand.join("\n"));
   return [...said].filter((w) => evidence.has(w)).length / said.size;
 };
 
@@ -58,14 +58,14 @@ declare namespace restatement {
       [
         args: [
           claim: "add 4 and 5 is 9",
-          english: "`add` given a `4` and b `5` is `9`.",
+          shorthand: ["add(a: 4, b: 5) → 9"],
         ],
         expected: 1,
       ],
       [
         args: [
           claim: "addition commutes for small integers",
-          english: "`add` given a `4` and b `5` is `9`.",
+          shorthand: ["add(a: 4, b: 5) → 9"],
         ],
         expected: 0,
       ],
@@ -96,11 +96,11 @@ export function lint(
           rule: "missing-claim",
           message: `${c.row === null ? c.name : qualifiedName(c).replaceAll(".", " > ")} has no /** … */ saying what it shows`,
         });
-      else if (words && restatement(words, c.english) >= RESTATES)
+      else if (words && restatement(words, c.shorthand) >= RESTATES)
         out.push({
           ...at(f.file, c),
           rule: "restates",
-          message: `"${words}" says what the test checks (${c.english}), not why it matters`,
+          message: `"${words}" says what the test checks (${c.shorthand.join("; ")}), not why it matters`,
         });
     }
     for (const s of f.subjects) {

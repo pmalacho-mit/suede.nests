@@ -11,6 +11,7 @@ import { holderOf } from "../vite-plugin/emit/declarations.mts";
 import { holdsTests } from "../vite-plugin/discovery.mts";
 import { claimWords, fileDocs, groupClaims } from "../describe/model.mts";
 import { declarationOf, resolved } from "../describe/lookup.mts";
+import { codeBlock, codeSpan } from "../describe/shorthand.mts";
 
 import type { ClaimDoc, FileDocs, SubjectDoc } from "../describe/model.mts";
 import type { Expect, Invoke, Table } from "../dsl.import.meta.vitest.ts";
@@ -111,8 +112,18 @@ function groupLine(claims: ClaimDoc[]): string {
     return `- **${first!.alias}**${said ? `: ${said}` : ""}: ${rows}${more}`;
   }
   const said = oneLine(claimWords(first!));
-  return `- **${first!.alias}**: ${said ? `${said}. _${first!.english}_` : first!.english}`;
+  const lines = first!.shorthand;
+  const head = `- **${first!.alias}**${said ? `: ${sentence(said)}` : ""}`;
+  // one line of evidence follows the words; several are the block of code they are
+  if (lines.length > 1) return [head, ...codeBlock(lines, "  ")].join("\n");
+  const code = lines.map(codeSpan).join("");
+  if (!code) return head;
+  return said ? `${head} ${code}` : `${head}: ${code}`;
 }
+
+// the claim's words end where they end: a stop is added only when they have none
+const sentence = (text: string) =>
+  /[.!?…]$/.test(text) ? text : `${text}.`;
 
 /** A subject's claims, as the Markdown its hover ends with. */
 export function claimsMarkdown({ docs, subject }: Described): string {
@@ -247,7 +258,7 @@ declare namespace hoverClaims {
       [file: "uses-memory.ts", needle: "parseMemory("]
     >,
     "=",
-    '**What it answers**\n- **Spellings**: suffixes are read: `"8g"` → `8192`; `"512m"` → `512`\n\n**What it refuses**\n- **Spellings**: suffixes are read: `"lots"` → `null`\n- **Empty**: nothing is no memory, not zero. _`parseMemory` given value `""` throws, saying `"empty"`._'
+    '**What it answers**\n- **Spellings**: suffixes are read: `"8g"` → `8192`; `"512m"` → `512`\n\n**What it refuses**\n- **Spellings**: suffixes are read: `"lots"` → `null`\n- **Empty**: nothing is no memory, not zero. `parseMemory("") throws /empty/`'
   >;
 
   /** and the same where it is declared */

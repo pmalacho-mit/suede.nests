@@ -281,7 +281,7 @@ tuple actual is checked position by position.
 A test can say what a type can: literals, calls, `new`, method calls. The DSL
 also has a value or an effect for each of the things tests of real code reach
 for next, so that those tests stay tests you can read whole, and the docs can
-say in words ([Tests as documentation](#tests-as-documentation)):
+say in a few lines of code ([Tests as documentation](#tests-as-documentation)):
 
 ```ts
 declare namespace debounce {
@@ -381,26 +381,46 @@ it as a type, so the harness — and `vitest` with it — never reaches your bui
 A harness can clean up after itself with Vitest's `onTestFinished`.
 
 **Give a harness function a one-line JSDoc that names its parameters in
-backticks.** The docs say a call to it in its own words: with the JSDoc above,
-`Invoke<typeof callsOf, [xs: [1, 2, 3]]>` reads as "what the callback is
-handed, given `[1, 2, 3]`". That works when every name in backticks in the
-first clause is one of its parameters, and every parameter is named.
+backticks.** The docs keep its own words, filled in, beside a call to it: with
+the JSDoc above, `Invoke<typeof callsOf, [xs: [1, 2, 3]]>` reads as
+`callsOf([1, 2, 3])  // what the callback is handed, given [1, 2, 3]`. That
+works when every name in backticks in the first clause is one of its
+parameters, and every parameter is named.
 
 ## Tests as documentation
 
 A test already has a claim, the `/** … */` a person wrote, and evidence, the
-type the printer runs. The printer can say that evidence in words, so the docs
-can put the two side by side, and a reader who does not read the DSL still
-sees exactly what was checked:
+type the printer runs. The printer can write that evidence in shorthand, a few
+lines of code shorter than the DSL and than the Vitest it prints, so the docs
+can put the two side by side and a reader sees exactly what was checked at a
+glance:
 
 ```
 parsePort > SaysWhatToDo: a refusal says what to type instead, and exits as a usage error
-  `Refused` has fix `"a whole number from 1 to 65535"` and code `64`.
-  where `Refused` is the error `parsePort` given text `"http"` throws
+  Refused = thrown(parsePort("http"))
+  Refused matches { message: "'http' is not a port", fix: "a whole number from 1 to 65535", code: 64 }
 ```
 
-The words are the evidence, never the claim. They say what the test checks; the
-claim says why that matters, and only a person can write it.
+A line is a mock, a setup, an alias, an effect or a claim, in the order the
+test runs them:
+
+```ts
+fakeTimers()
+Run = spy()
+Debounced = debounce(run: Run, ms: 100)
+Debounced()  // ×3
+advanceTimers(100)
+calls(Run).length → 1
+```
+
+A claim is an operator or a method where code has one (`→` for `"="`, `===`,
+`>=`, `≈ y ± tol`, `.startsWith(…)`, `!x.includes(…)`, `instanceof`), and a
+word only where it has none (`is empty`, `matches { … }`,
+`throws RangeError { message: /integer/ }`, `Run was called with (1), then (2)`).
+A call names its arguments once it has more than one.
+
+The shorthand is the evidence, never the claim. It says what the test checks;
+the claim says why that matters, and only a person can write it.
 
 **A row says what it shows.** A `/** … */` just before one row of a `Table`
 describes that row: the printed test carries it, and the docs show it beside
@@ -429,7 +449,7 @@ resolution: rename the test and the editor's rename follows; remove it and
 `docs model` reads every file with tests, found as the plugin finds them, into
 one model. For each file: the functions its tests are named after (signature,
 JSDoc, tags), and each test as documentation: its words (the alias's, and a
-row's own), its evidence in words, its table cells named as the arguments are,
+row's own), its evidence in shorthand, its table cells named as the arguments are,
 whether it shows what is answered or what is refused, and what it leaned on
 (harness functions, mocks, setups, the DSL values above). Then what only the
 whole program knows: who calls each function, from where, and whether from

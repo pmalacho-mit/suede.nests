@@ -1,8 +1,9 @@
 // A file's docs as Markdown: for each function its tests are named after, what
 // it is, what it answers and what it refuses (each claim in its author's words,
-// with its evidence in words beside it), who calls it, and what the tests stood
-// in for it.
+// with its evidence in shorthand under it), who calls it, and what the tests
+// stood in for it.
 import { claimWords, groupClaims, subjectId } from "./model.mts";
+import { codeBlock, codeSpan } from "./shorthand.mts";
 
 import type { ClaimDoc, FileDocs, SubjectDoc } from "./model.mts";
 import type { ProjectDocs, Reference } from "./project.mts";
@@ -80,10 +81,15 @@ const claimItem = (c: ClaimDoc, { mark, name }: Render) => {
     : "";
   return [
     `- ${name(c.alias)}${words ? `: ${oneLine(words)}` : " _(no words of its own)_"} ${mark(c)}${tags}`.trimEnd(),
-    `  - ${c.english}`,
-    ...(c.where.length ? [`  - where ${c.where.join("; ")}`] : []),
+    ...evidence(c.shorthand),
   ];
 };
+
+// a line of evidence under its claim; several, as the block of code they are
+const evidence = (lines: string[]) =>
+  lines.length > 1
+    ? codeBlock(lines, "  ")
+    : lines.map((l) => `  - ${codeSpan(l)}`);
 
 const tableItem = (rows: ClaimDoc[], render: Render) => {
   const words = rows[0]!.doc;

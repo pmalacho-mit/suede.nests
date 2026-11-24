@@ -8,7 +8,7 @@
 // tests are not read as what they are. This plugin takes them out of the
 // output, reads them through the docs model (model.mts, project.mts), and puts
 // each function's claims on the function's page: what it answers, what it
-// refuses, each in its author's words with its evidence in words, a table's
+// refuses, each in its author's words with its evidence in shorthand, a table's
 // rows as a table, and who calls it. A `{@link fn.Alias}` in the function's
 // prose then links to that claim, on the same page.
 import path from "node:path";
