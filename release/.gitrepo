@@ -6,7 +6,7 @@
 [subrepo]
 	remote = https://github.com/pmalacho-mit/typescript-namespace-tests-suede
 	branch = release
-	commit = 230db37cd1bd9913c9de3032995c2fb4c751b054
-	parent = d751806e9acf52699142f49eea418cf101e2e580
+	commit = 755ef5f3a6906a8ec683887b8516f38c45a4a1da
+	parent = 89f553facddb1fbdce529aa66f0e863922823ef6
 	method = merge
 	cmdver = 0.4.9
